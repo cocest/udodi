@@ -356,12 +356,13 @@ function processForDirective(nodes, context, scope) {
 
 			const cleanupRecord = (record) => {
 				if (!record || record.destroyed) return;
+				
 				record.destroyed = true;
 				runScopeCleanup(record.scope, "[@for]");
-				mountedRoots.delete(record.el);
-				cleanupFunctions.delete(record.el);
-				unmountFunctions.delete(record.el);
-				if (record.el.isConnected) record.el.remove();
+
+				if (record.el.isConnected) {
+					record.el.remove();
+				}
 			};
 
 			const dispose = effect(() => {
