@@ -1,0 +1,33 @@
+{
+    "name": "udodi.js",
+    "version": "1.0.0",
+    "description": "A lightweight UI/component framework",
+    "type": "module",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsup",
+        "clean": "rm -rf dist",
+        "prepublishOnly": "npm run build"
+    },
+    "keywords": [
+        "ui",
+        "framework",
+        "components",
+        "udodi"
+    ],
+    "author": "",
+    "license": "MIT",
+    "devDependencies": {
+        "tsup": "^8.5.1",
+        "typescript": "^6.0.3"
+    }
+}
