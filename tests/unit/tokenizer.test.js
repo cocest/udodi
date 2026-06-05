@@ -15,7 +15,7 @@ import {
 	isPathPath,
 	classifyToken,
 	parseResolver,
-} from "./tokenizer.js";
+} from "../../packages/core/tokenizer.js";
 
 // Helper for test reporting
 function test(description, fn) {
