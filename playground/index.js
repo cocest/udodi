@@ -36,7 +36,7 @@ app.get("*", (req, res) => {
     res.sendFile(path.join(process.cwd(), "public/index.html"));
 });
 
-// Read Hostinger's assigned port, fallback to 8080 only for local testing
+// Read assigned port, fallback to 8080 only for local testing
 const PORT = process.env.PORT || 8080;
 
 // create HTTP server
