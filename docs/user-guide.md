@@ -381,7 +381,7 @@ Render an array:
 Add an index variable:
 
 ```html
-<li @for="item:index todos">
+<li @for="item index todos">
 	<span @text="index"></span>: <span @text="item.name"></span>
 </li>
 ```
@@ -389,7 +389,7 @@ Add an index variable:
 Use `@key` for stable identity. Existing loop items are preserved by key and reused where possible, which reduces DOM churn during reorder or insert/delete operations:
 
 ```html
-<li @for="item:index todos" @key="item.id">
+<li @for="item index todos" @key="item.id">
 	<input type="checkbox" @attr="checked:item.done">
 	<span @text="item.text"></span>
 </li>
