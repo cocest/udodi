@@ -76,7 +76,7 @@ export function mount(component, container) {
 	const instance = component();
 	if (!instance?.template) {
 		throw new Error(
-			`[mount] Component "${component.name || "anonymous"}" must return { template }`,
+			`[mount] Component "${component.name || ""}" must return { template }`,
 		);
 	}
 
