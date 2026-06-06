@@ -280,7 +280,7 @@ You can pass string literals containing special characters (including `:` , `|` 
 
 ```html
 <!-- URLs -->
-<span @text="url:'https://www.jito.network'"></span>
+<span @text="url:'https://www.example.com'"></span>
 <a @attr="href:baseUrl:'/api/users'"></a>
 
 <!-- Strings with special characters -->
@@ -317,7 +317,7 @@ Resolver-based `@bind` is read-only and warns if a setter is attempted.
 Use `className:path` to toggle a class:
 
 ```html
-<button @class="active:isActive disabled:isDisabled"></button>
+<button @class="'active':isActive 'disabled':isDisabled"></button>
 ```
 
 Use a bare expression for a class list path or a quoted literal class list:
