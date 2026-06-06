@@ -72,7 +72,6 @@ function readPath(context, path) {
 
 	for (let i = 0; i < parts.length; i++) {
 		const part = parts[i];
-		if (!part) return undefined;
 		if (value === null || value === undefined) return undefined;
 
 		value = value[part];
@@ -101,7 +100,6 @@ function hasPath(context, path) {
 
 	for (let i = 0; i < parts.length; i++) {
 		const part = parts[i];
-		if (!part) return false;
 		if (value === null || value === undefined) return false;
 
 		value = value[part];
