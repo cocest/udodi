@@ -1,4 +1,4 @@
-import { createComponent } from "../udodi/index.js";
+import { createComponent } from 'udodi';
 
 export const Counter = createComponent({
 	name: "counter",
