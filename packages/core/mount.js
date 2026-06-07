@@ -97,7 +97,6 @@ export function mount(component, container) {
 	}
 
 	let destroyed = false;
-
 	let registeredRoot = false;
 
 	const unregister = () => {

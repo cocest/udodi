@@ -3,8 +3,8 @@
  * Handles quoted strings, dot-paths, and resolver syntax.
  */
 
-const PATH_TOKEN_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-const WHITESPACE_RE = /\s/;
+const PATH_TOKEN_REGEX = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const WHITESPACE_REGEX = /\s/;
 
 /**
  * Checks if a character is a quote.
@@ -68,7 +68,7 @@ export function splitOutsideQuotes(str, delimiter = null, whitespace = false) {
 			continue;
 		}
 
-		const isSeparator = whitespace ? WHITESPACE_RE.test(ch) : ch === delimiter;
+		const isSeparator = whitespace ? WHITESPACE_REGEX.test(ch) : ch === delimiter;
 
 		if (!quoteChar && isSeparator) {
 			const token = str.slice(start, i).trim();
@@ -174,7 +174,7 @@ export function unquoteString(str) {
  * @returns {boolean} True if valid.
  */
 export function isPathToken(token) {
-	return PATH_TOKEN_RE.test(token);
+	return PATH_TOKEN_REGEX.test(token);
 }
 
 /**

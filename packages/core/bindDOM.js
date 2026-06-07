@@ -2,8 +2,8 @@
 import { createSignal, effect } from "../reactivity/index.js";
 import { extractAllDirectives, DIRECTIVE_ATTRIBUTES } from "./directive.js";
 import {
- registerRoot,
- unregisterRoot,
+ 	registerRoot,
+ 	unregisterRoot,
 	runScopeCleanup,
 } from "./lifecycle.js";
 import {
@@ -356,8 +356,15 @@ function processForDirective(nodes, context, scope) {
 				
 				record.destroyed = true;
 				runScopeCleanup(record.scope, "[@for]");
-     unregisterRoot(record.el);
+     			unregisterRoot(record.el);
+			};
 
+			const unmountRecord = (record) => {
+				if (!record || record.destroyed) return;
+
+				cleanupRecord(record);
+
+				// Ensure element is removed in case it wasn't already
 				if (record.el.isConnected) {
 					record.el.remove();
 				}
@@ -414,11 +421,13 @@ function processForDirective(nodes, context, scope) {
 							destroyed: false,
 						};
 
-						// === QUEUE FOR DEFERRED BINDING ===
+						// Queue the new element for binding after this effect flushes, so that all @for items are processed together.
 						queueBinding(el, itemContext, itemScope);
 
 						const cleanup = () => cleanupRecord(record);
-       registerRoot(el,cleanup,cleanup);
+						const unmount = () => unmountRecord(record);
+       					registerRoot(el, cleanup, unmount);
+
 					} else {
 						record.setItem(item);
 						if (indexVar) record.setIndex(index);
@@ -1111,6 +1120,15 @@ function createStyleDeclarationBinding(context, expr) {
 }
 
 function parseStyleBinding(context, item) {
+	// Bare quoted string literal: static one-time style (no reactive effect)
+	if (isQuotedString(item)) {
+		const declarations = parseStyleDeclarations(unquoteString(item));
+		return {
+			type: "static",
+			declarations,
+		};
+	}
+
 	const parts = splitFirstUnquoted(item, ":");
 
 	if (parts.length === 1) {
@@ -1121,31 +1139,36 @@ function parseStyleBinding(context, item) {
 	const right = parts[1].trim();
 	const leftToken = classifyToken(left);
 
-	if (leftToken.type === "path" && typeof readPath(context, leftToken.value) === "function") {
-		return createStyleDeclarationBinding(context, item);
-	}
+	// Quoted left side: conditional style declarations (e.g. 'color: red':hasError)
+	if (leftToken.type === "literal") {
+		const declarations = parseStyleDeclarations(leftToken.value);
+		const getter = createGetter(context, right);
 
-	if (leftToken.type !== "literal") {
 		return {
-			type: "property",
-			prop: left,
-			getter: createGetter(context, right),
+			type: "conditional",
+			declarations,
+			getter,
 		};
 	}
 
-	const declarations = parseStyleDeclarations(leftToken.value);
-	const getter = createGetter(context, right);
-
+	// Unquoted left side: property binding (supports path or resolver:arg1:arg2)
 	return {
-		type: "conditional",
-		declarations,
-		getter,
+		type: "property",
+		prop: left,
+		getter: createGetter(context, right),
 	};
 }
 
 /**
  * Processes @style directives: inline style binding.
- * Syntax: property:path or quoted declarations for conditional styles.
+ *
+ * Syntax (consistent with @class):
+ *   - 'color: red; padding: 16px'          → static one-time styles (quoted literal)
+ *   - property:path                        → backgroundColor:cardBg
+ *   - property:resolver:arg1:arg2          → color:getTextColor:mode:level
+ *   - 'declarations':condition             → 'color: red':hasError
+ *   - dynamicStyles                        → full style object or function
+ *
  * @param {HTMLElement[]} nodes - Elements with @style.
  * @param {Object} context - Evaluation context.
  * @param {Object} scope - Effect scope.
@@ -1162,9 +1185,22 @@ function processStyleDirective(nodes, context, scope) {
 			);
 			const previousConditionalProps = new Map();
 
+			// Apply static styles immediately (no effect needed)
+			bindings.forEach((binding) => {
+				if (binding.type === "static") {
+					binding.declarations.forEach(([prop, value]) => {
+						writer.set(prop, value);
+					});
+				}
+			});
+
 			const dispose = effect(() => {
 				bindings.forEach((binding) => {
 					try {
+						if (binding.type === "static") {
+							return; // already applied
+						}
+
 						if (binding.type === "declarations") {
 							binding.apply(writer);
 							return;
@@ -1181,6 +1217,7 @@ function processStyleDirective(nodes, context, scope) {
 							return;
 						}
 
+						// Conditional style block
 						const active = !!binding.getter();
 						const previous = previousConditionalProps.get(binding) || [];
 						previous.forEach(([prop]) => writer.restore(prop));
@@ -1193,6 +1230,7 @@ function processStyleDirective(nodes, context, scope) {
 						} else {
 							previousConditionalProps.delete(binding);
 						}
+
 					} catch (err) {
 						console.warn("[@style] Error evaluating binding:", err);
 					}
@@ -1201,6 +1239,7 @@ function processStyleDirective(nodes, context, scope) {
 
 			scope.cleanups.push(dispose);
 			el.removeAttribute("@style");
+
 		} catch (err) {
 			console.warn("[@style] Invalid directive:", err);
 		}
@@ -1322,6 +1361,6 @@ export function bindDOM(
 	processTeleportDirective(directives.teleport, scope);
 	processValidateDirective(directives.validate, context, scope);
 
-	// === FINAL STEP: Flush all queued child bindings ===
+	// Flush all queued child bindings
 	scheduleFlush();
 }
