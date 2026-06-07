@@ -431,7 +431,7 @@ Move an element to another DOM target:
 
 `overlay` resolves to `#udodi-overlay-root`.
 
-### `@validate` and `@validate-error`
+### `@validate` and `@error`
 
 Validation runs on `input` and `blur`:
 
@@ -440,7 +440,7 @@ Validation runs on `input` and `blur`:
 	name="email"
 	@bind="email"
 	@validate="required email"
-	@validate-error="emailError"
+	@error="emailError"
 >
 <span @text="emailError"></span>
 ```
@@ -454,7 +454,7 @@ Built-in rules:
 | `min:n` | Value must have at least `n` characters. |
 | `max:n` | Value must have at most `n` characters. |
 
-If `@validate-error` is omitted, Udodi uses `${element.name}_error` when the element has a `name` attribute. Otherwise it falls back to `validation_error`.
+If `@error` is omitted, Udodi uses `${element.name}_error` when the element has a `name` attribute. Otherwise it falls back to `validation_error`.
 
 Custom validator resolvers are supported:
 
@@ -467,7 +467,7 @@ methods: {
 ```
 
 ```html
-<input @validate="isLongEnough:8" @validate-error="passwordError">
+<input @validate="isLongEnough:8" @error="passwordError">
 ```
 
 ## Methods and Resolvers
