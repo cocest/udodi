@@ -1299,7 +1299,7 @@ function processValidateDirective(nodes, context, scope) {
 		if (!rulesStr) return;
 
 		try {
-			const errorKey = el.getAttribute("@validate-error") || (el.name ? `${el.name}_error` : "validation_error");
+			const errorKey = el.getAttribute("@error") || (el.name ? `${el.name}_error` : "validation_error");
 			const resolverInfo = parseResolver(rulesStr);
 			const resolverFn =
 				resolverInfo && readPath(context, resolverInfo.resolver);
@@ -1336,7 +1336,8 @@ function processValidateDirective(nodes, context, scope) {
 			});
 
 			el.removeAttribute("@validate");
-			el.removeAttribute("@validate-error");
+			el.removeAttribute("@error");
+			
 		} catch (err) {
 			console.warn("[@validate] Invalid directive:", err);
 		}
