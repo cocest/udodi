@@ -278,7 +278,9 @@ udodi/
 npm run build
 
 # Start development playground
-cd playground && npm run dev
+cd playground
+npm install
+npm run dev
 
 # Run tests
 npm test
