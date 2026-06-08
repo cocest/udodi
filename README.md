@@ -348,7 +348,7 @@ Udodi uses **Vitest** for testing. Here are the most useful commands:
 | `npx vitest tests/unit/tokenizer.test.js`   | Run specific test file                               |
 | `npx vitest -t "Tokenizer"`                 | Run tests matching a name pattern                    |
 
-The full detail explaination about testing can be found here:  [Udodi Testing](./docs/udodi-testing.md)
+See [Testing](./docs/testing.md) for detailed information on running tests, writing test cases, and the testing philosophy.
 
 ---
 
