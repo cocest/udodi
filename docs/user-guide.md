@@ -6,7 +6,8 @@ This guide reflects the current implementation in `packages/`.
 
 ## Quick Start
 
-Import from the public entry file:
+All code examples in this guide assume you have installed Udodi via `npm install udodi` (or equivalent).  
+If you're working inside the `/playground` folder during development, the import will resolve correctly thanks to the Vite alias.
 
 ```javascript
 import { createComponent, render } from "udodi";
