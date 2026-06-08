@@ -18,6 +18,7 @@ The recommended testing strategy is:
 
 All tests are located in the `tests/` directory:
 
+```bash
 tests/
 ├── unit/
 ├── directives/
@@ -31,6 +32,7 @@ tests/
 │   └── watcher.test.js
 └── integration/
     └── component-lifecycle.test.js
+```
 
 ---
 
