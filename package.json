@@ -15,9 +15,13 @@
         "dist"
     ],
     "scripts": {
+        "dev": "tsup --watch",
         "build": "tsup",
         "clean": "rm -rf dist",
-        "prepublishOnly": "npm run build"
+        "prepublishOnly": "npm run build",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:ui": "vitest --ui"
     },
     "keywords": [
         "ui",
@@ -28,7 +32,10 @@
     "author": "",
     "license": "MIT",
     "devDependencies": {
+        "@vitest/ui": "^4.1.8",
+        "happy-dom": "^20.10.2",
         "tsup": "^8.5.1",
-        "typescript": "^6.0.3"
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.8"
     }
 }

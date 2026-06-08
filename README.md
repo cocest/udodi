@@ -282,14 +282,71 @@ cd playground
 npm install
 npm run dev
 
-# Run tests
-npm test
+# Testing
+npm test               # Run all tests once
+npm run test:watch     # Run tests in watch mode (recommended during development)
+npm run test:ui        # Open interactive browser UI for tests
 ```
 
 Udodi is bundled using **[tsup](https://tsup.egoist.dev/)** and outputs:
 
 - ESM modules
 - browser IIFE builds (`window.Udodi`)
+
+---
+
+## Testing
+
+Udodi is designed to support both low-level runtime testing and high-level browser integration testing.
+
+The recommended testing strategy is:
+
+| Test Type | Purpose |
+|---|---|
+| Unit Tests | Verify isolated runtime behavior |
+| DOM Tests | Validate directive behavior and DOM updates |
+| Integration Tests | Verify component interaction and lifecycle behavior |
+| Browser Playground Tests | Validate real browser runtime behavior |
+| Performance Tests | Benchmark reactivity and rendering speed |
+
+---
+
+### Test Structure
+
+All tests are located in the `tests/` directory:
+
+tests/
+├── unit/
+├── directives/
+│   ├── text.test.js
+│   ├── bind.test.js
+│   ├── if.test.js
+│   └── for.test.js
+├── reactivity/
+│   ├── signal.test.js
+│   ├── computed.test.js
+│   └── watcher.test.js
+└── integration/
+    └── component-lifecycle.test.js
+
+---
+
+### Running Tests
+
+Udodi uses **Vitest** for testing. Here are the most useful commands:
+
+#### Vitest Commands
+
+| Command                                     | Purpose                                              |
+|---------------------------------------------|------------------------------------------------------|
+| `npm test`                                  | Run all tests once                                   |
+| `npm run test:watch`                        | Watch mode (reruns on file changes)                  |
+| `npm run test:ui`                           | Beautiful browser UI                                 |
+| `npx vitest list`                           | List all discovered test files                       |
+| `npx vitest tests/unit/tokenizer.test.js`   | Run specific test file                               |
+| `npx vitest -t "Tokenizer"`                 | Run tests matching a name pattern                    |
+
+The full detail explaination about testing can be found here:  [Udodi Testing](./docs/udodi-testing.md)
 
 ---
 
@@ -325,4 +382,4 @@ before submitting pull requests.
 
 ---
 
-**Made with ❤️ in Nigeria for simplicity and performance.**
+**Made with ❤️ in Nigeria.**
