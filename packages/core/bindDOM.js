@@ -74,11 +74,6 @@ function readPath(context, path) {
 		if (value === null || value === undefined) return undefined;
 
 		value = value[part];
-
-		// Only unwrap on the final segment
-		if (i === parts.length - 1) {
-			value = unwrap(value);
-		}
 	}
 
 	return value;
