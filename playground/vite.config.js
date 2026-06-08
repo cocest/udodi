@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import path from "path";
 
 export default defineConfig({
 	server: {
@@ -9,10 +10,9 @@ export default defineConfig({
 		outDir: "dist",
 		emptyOutDir: true,
 	},
-	// This ensures Vite resolves the local Udodi from dist
 	resolve: {
 		alias: {
-			udodi: "../dist/index.js", // points to ESM build
+			udodi: path.resolve(__dirname, "../")
 		},
 	},
 });
