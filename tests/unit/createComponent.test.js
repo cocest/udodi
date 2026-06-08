@@ -17,9 +17,9 @@ describe("Tokenizer & Directive Expression Parser", () => {
 			// These should be treated as literal values, not paths
 			const component = createComponent({
 				template: () => `
-          <span @text="'hello world'"></span>
-          <span @text='"double quotes"'></span>
-        `,
+					<span @text="'hello world'"></span>
+					<span @text='"double quotes"'></span>
+				`,
 			});
 
 			expect(component).toBeDefined();
