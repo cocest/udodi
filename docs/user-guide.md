@@ -297,6 +297,7 @@ You can pass string literals containing special characters (including `:` , `|` 
 <!-- Multiple arguments -->
 <span @text="formatDate:createdAt:'MMM DD, YYYY'"></span>
 <span @text="currency:pricing.total:'USD'"></span>
+```
 
 The first segment is a method/resolver name on `ctx`; later segments are path values when found, or literal strings when no path exists.
 
