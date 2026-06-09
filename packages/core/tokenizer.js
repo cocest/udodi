@@ -158,46 +158,56 @@ export function splitUnquoted(str, delimiter) {
 }
 
 /**
- * Splits a string once by delimiter
- * outside quoted regions.
+ * Splits a string once by the first occurrence of delimiter
+ * outside of quoted regions.
  *
- * Returns at most 2 parts.
+ * Returns at most 2 parts: [left, right] or [str] if no delimiter found.
  *
  * @param {string} str - String to split.
- * @param {string} delimiter - Delimiter character.
- * @returns {string[]} [left, right] or [left]
+ * @param {string} delimiter - Delimiter character (e.g. ':')
+ * @returns {string[]}
  */
 export function splitFirstUnquoted(str, delimiter) {
 	const len = str.length;
 	const delimCode = delimiter.charCodeAt(0);
 
-	let quote = 0;
+	let quote = 0;      // 0 = no quote, 34 = ", 39 = '
 	let escaped = false;
 
 	for (let i = 0; i < len; i++) {
 		const c = str.charCodeAt(i);
 
-		if (c === 92 && !escaped) { // '\'
+		if (escaped) {
+			escaped = false;
+			continue;
+		}
+
+		if (c === 92) { // backslash '\'
 			escaped = true;
 			continue;
 		}
 
-		if ((c === 34 || c === 39) && !escaped) {
-			quote = quote === c ? 0 : quote || c;
+		// Toggle quote state
+		if (c === 34 || c === 39) { // " or '
+			if (quote === 0) {
+				quote = c;
+			} else if (quote === c) {
+				quote = 0;
+			}
 			continue;
 		}
 
-		escaped = false;
-
+		// Found unquoted delimiter
 		if (quote === 0 && c === delimCode) {
 			return [
-				str.slice(0, i),
-				str.slice(i + 1)
+				str.slice(0, i).trim(),
+				str.slice(i + 1).trim()
 			];
 		}
 	}
 
-	return [str];
+	// No delimiter found
+	return [str.trim()];
 }
 
 /**
