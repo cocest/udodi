@@ -303,7 +303,7 @@ export function parseResolver(expr) {
 		return null;
 	}
 
-	const resolver = parts.shift()?.trim();
+	const resolver = parts.shift();
 
 	if (!resolver || !isPathToken(resolver)) {
 		return null;
