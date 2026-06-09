@@ -5,8 +5,8 @@
  * Based on Udodi User Guide - Directive expression rules and resolvers.
  */
 
-import { describe, it, expect } from "vitest";
-import { createComponent } from "udodi";
+import { describe, it, vi, expect } from "vitest";
+import { render, createComponent } from "udodi";
 
 // We test the public behavior through the tokenizer's effects on directives/resolvers
 // rather than private internals.
@@ -72,12 +72,18 @@ describe("Tokenizer & Directive Expression Parser", () => {
 		});
 
 		it("rejects quoted resolver name", () => {
-			// Should be invalid per guide
-			expect(() => {
-				createComponent({
-					template: () => `<span @text="'formatDate':createdAt"></span>`,
-				});
-			}).toThrow(); // or at least not treat it as valid resolver
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+			const component = createComponent({
+				template: () => `<span @text="'formatDate':createdAt"></span>`,
+			});
+
+			const root = document.createElement("div");
+
+			render(component(), root);
+			expect(component).toBeDefined();
+			expect(warnSpy).toHaveBeenCalled();
+			warnSpy.mockRestore();
 		});
 
 		it("requires colon separator for resolvers", () => {

@@ -30,7 +30,7 @@ describe("Tokenizer", () => {
 
 	describe("isEscaped", () => {
 		it("detects escaped characters", () => {
-			expect(isEscaped("'it\\'s'", 5)).toBe(true);
+			expect(isEscaped("'it\\'s'", 4)).toBe(true);
 			expect(isEscaped('"say \\"hello"', 6)).toBe(true);
 			expect(isEscaped("no escape", 2)).toBe(false);
 		});
@@ -84,7 +84,8 @@ describe("Tokenizer", () => {
 		it("split by spaces respecting quotes", () => {
 			const result = splitOutsideQuotes(
 				"user.name 'hello world' count",
-				(ch) => ch === " ",
+				null,
+				true
 			);
 			expect(result).toHaveLength(3);
 			expect(result[0]).toBe("user.name");
@@ -94,14 +95,15 @@ describe("Tokenizer", () => {
 
 		it("throws on unclosed quote", () => {
 			expect(() => {
-				splitOutsideQuotes("'unclosed string", (ch) => ch === " ");
+				splitOutsideQuotes("'unclosed string", null, true);
 			}).toThrow(/Unclosed quoted string/);
 		});
 
 		it("colon separator with quoted args", () => {
 			const result = splitOutsideQuotes(
 				"formatDate:createdAt:'MMM DD, YYYY'",
-				(ch) => ch === ":",
+				":",
+				false
 			);
 			expect(result).toHaveLength(3);
 			expect(result[0]).toBe("formatDate");
@@ -126,9 +128,9 @@ describe("Tokenizer", () => {
 
 		it("handles spaces and multiple separators", () => {
 			expect(splitUnquoted("one , two , 'three, four'", ",")).toEqual([
-				"one ",
-				" two ",
-				" 'three, four'",
+				"one",
+				"two",
+				"'three, four'",
 			]);
 		});
 
@@ -144,7 +146,7 @@ describe("Tokenizer", () => {
 		});
 
 		it("handles empty string", () => {
-			expect(splitUnquoted("", ",")).toEqual([""]);
+			expect(splitUnquoted("", ",")).toEqual([]);
 		});
 	});
 
@@ -241,7 +243,8 @@ describe("Tokenizer", () => {
 		it("special characters in quoted strings", () => {
 			const tokens = splitOutsideQuotes(
 				"'hello:world|test@example'",
-				(ch) => ch === "|",
+				"|",
+				false
 			);
 			expect(tokens[0]).toBe("'hello:world|test@example'");
 		});

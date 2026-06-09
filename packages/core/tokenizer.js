@@ -24,13 +24,15 @@ export function isQuote(ch) {
  * @returns {boolean} True if escaped.
  */
 export function isEscaped(str, index) {
-	let slashCount = 0;
+	let i = index;
+	let n = 0;
 
-	for (let i = index - 1; i >= 0 && str[i] === "\\"; i--) {
-		slashCount++;
+	while (--i >= 0) {
+		if (str.charCodeAt(i) !== 92) break;
+		n++;
 	}
 
-	return (slashCount & 1) === 1;
+	return (n & 1) === 1;
 }
 
 /**
