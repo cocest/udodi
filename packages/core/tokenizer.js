@@ -168,15 +168,36 @@ export function splitUnquoted(str, delimiter) {
  * @returns {string[]} [left, right] or [left]
  */
 export function splitFirstUnquoted(str, delimiter) {
-	const parts = splitUnquoted(str, delimiter);
+	const len = str.length;
+	const delimCode = delimiter.charCodeAt(0);
 
-	if (parts.length <= 1) {
-		return [parts[0] ?? ""];
+	let quote = 0;
+	let escaped = false;
+
+	for (let i = 0; i < len; i++) {
+		const c = str.charCodeAt(i);
+
+		if (c === 92 && !escaped) { // '\'
+			escaped = true;
+			continue;
+		}
+
+		if ((c === 34 || c === 39) && !escaped) {
+			quote = quote === c ? 0 : quote || c;
+			continue;
+		}
+
+		escaped = false;
+
+		if (quote === 0 && c === delimCode) {
+			return [
+				str.slice(0, i),
+				str.slice(i + 1)
+			];
+		}
 	}
 
-	const [first, ...rest] = parts;
-
-	return [first, rest.join(delimiter)];
+	return [str];
 }
 
 /**
