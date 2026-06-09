@@ -450,7 +450,7 @@ Validation runs automatically on every `input` and `blur` event (and once immedi
     @validate="required email"
     @error="emailError">
 
-<span @if="emailError" class="error" @text="emailError"></span>
+<span class="error" @text="emailError"></span>
 ```
 
 Built-in rules:
