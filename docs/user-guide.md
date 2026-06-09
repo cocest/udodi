@@ -441,16 +441,16 @@ Move an element to another DOM target:
 
 ### `@validate` and `@error`
 
-Validation runs on `input` and `blur`:
+Validation runs automatically on every `input` and `blur` event (and once immediately after mounting).
 
 ```html
 <input
-	name="email"
-	@bind="email"
-	@validate="required email"
-	@error="emailError"
->
-<span @text="emailError"></span>
+    name="email"
+    @bind="email"
+    @validate="required email"
+    @error="emailError">
+
+<span @if="emailError" class="error" @text="emailError"></span>
 ```
 
 Built-in rules:
@@ -464,19 +464,45 @@ Built-in rules:
 
 If `@error` is omitted, Udodi uses `${element.name}_error` when the element has a `name` attribute. Otherwise it falls back to `validation_error`.
 
-Custom validator resolvers are supported:
+#### Custom Validators
+
+You can use a custom resolver function for validation. The function should:
+
+- Return `true` if the value is valid
+- Return a string containing the error message if invalid
 
 ```javascript
 methods: {
-	isLongEnough(value, minimum) {
-		return value.length >= Number(minimum);
-	}
+  	validatePassword(value) {
+    	if (!value) return "Password is required";
+    	if (value.length < 8) return "Password must be at least 8 characters long";
+    	if (!/[A-Z]/.test(value)) return "Password must contain at least one uppercase letter";
+    	if (!/[0-9]/.test(value)) return "Password must contain at least one number";
+    
+    	return true; // Valid
+ 	},
+
+  	validateEmail(value) {
+    	if (!value) return "Email is required";
+    	if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      		return "Please enter a valid email address";
+    	}
+    	return true;
+  	}
 }
 ```
 
 ```html
-<input @validate="isLongEnough:8" @error="passwordError">
+<input 
+  	type="password"
+  	@bind="passwordInput"
+  	@validate="validatePassword"
+  	@error="passwordError">
+
+<span class="error" @text="passwordError"></span>
 ```
+
+This approach gives you full control over error messages while keeping the API clean and consistent.
 
 ## Methods and Resolvers
 
