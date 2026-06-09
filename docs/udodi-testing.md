@@ -20,7 +20,6 @@ All tests are located in the `tests/` directory:
 
 ```bash
 tests/
-├── unit/
 ├── directives/
 │   ├── text.test.js
 │   ├── bind.test.js
