@@ -97,10 +97,6 @@ function hasPath(context, path) {
 		if (value === null || value === undefined) return false;
 
 		value = value[part];
-
-		if (i === parts.length - 1) {
-			value = unwrap(value);
-		}
 	}
 
 	return value !== undefined && value !== null;
