@@ -197,7 +197,7 @@ Returning `undefined` cancels the update.
 
 ## Event Handlers
 
-Use `@on="event:handler"`:
+Use `@on="event.modifier:handler"`:
 
 ```html
 <button @on="click:save">Save</button>
