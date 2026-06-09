@@ -3,9 +3,6 @@
  * Handles quoted strings, dot-paths, and resolver syntax.
  */
 
-const PATH_TOKEN_REGEX = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-const WHITESPACE_REGEX = /\s/;
-
 /**
  * Checks if a character is a quote.
  * @param {string} ch - Single character to test.
@@ -49,48 +46,89 @@ export function isEscaped(str, index) {
  * @param {boolean} whitespace - Whether to split by whitespace.
  * @returns {string[]} Array of trimmed tokens.
  */
-export function splitOutsideQuotes(str, delimiter = null, whitespace = false) {
-	if (!str) return [];
+export function splitOutsideQuotes(
+	str,
+	delimiter = null,
+	whitespace = false
+) {
+	if (str.length === 0) return [];
 
 	const tokens = [];
+	const delimiterCode = delimiter ? delimiter.charCodeAt(0) : 0;
 
 	let start = 0;
-	let quoteChar = null;
+	let quote = 0;
+	let escaped = false;
 
-	for (let i = 0; i < str.length; i++) {
-		const ch = str[i];
+	const len = str.length;
 
-		if (isQuote(ch)) {
-			if (!quoteChar) {
-				quoteChar = ch;
-			} else if (quoteChar === ch && !isEscaped(str, i)) {
-				quoteChar = null;
+	for (let i = 0; i < len; i++) {
+		const code = str.charCodeAt(i);
+
+		// Backslash
+		if (code === 92) {
+			escaped = !escaped;
+			continue;
+		}
+
+		// Quotes
+		if ((code === 34 || code === 39) && !escaped) {
+			if (quote === 0) {
+				quote = code;
+			} else if (quote === code) {
+				quote = 0;
 			}
 
 			continue;
 		}
 
-		const isSeparator = whitespace ? WHITESPACE_REGEX.test(ch) : ch === delimiter;
+		escaped = false;
 
-		if (!quoteChar && isSeparator) {
-			const token = str.slice(start, i).trim();
+		let separator = false;
 
-			if (token) {
-				tokens.push(token);
+		if (quote === 0) {
+			if (whitespace) {
+				// space, tab, newline, carriage return
+				separator =
+					code === 32 ||
+					code === 9 ||
+					code === 10 ||
+					code === 13;
+			} else {
+				separator = code === delimiterCode;
+			}
+		}
+
+		if (separator) {
+			let s = start;
+			let e = i;
+
+			// left trim
+			while (s < e && str.charCodeAt(s) <= 32) s++;
+
+			// right trim
+			while (e > s && str.charCodeAt(e - 1) <= 32) e--;
+
+			if (s < e) {
+				tokens.push(str.slice(s, e));
 			}
 
 			start = i + 1;
 		}
 	}
 
-	if (quoteChar) {
+	if (quote !== 0) {
 		throw new Error(`Unclosed quoted string in directive: ${str}`);
 	}
 
-	const tail = str.slice(start).trim();
+	let s = start;
+	let e = len;
 
-	if (tail) {
-		tokens.push(tail);
+	while (s < e && str.charCodeAt(s) <= 32) s++;
+	while (e > s && str.charCodeAt(e - 1) <= 32) e--;
+
+	if (s < e) {
+		tokens.push(str.slice(s, e));
 	}
 
 	return tokens;
@@ -148,13 +186,15 @@ export function splitFirstUnquoted(str, delimiter) {
  * @returns {boolean} True if quoted.
  */
 export function isQuotedString(str) {
-	if (str.length < 2) {
-		return false;
-	}
+	const len = str.length;
+	if (len < 2) return false;
 
-	const quote = str[0];
+	const first = str.charCodeAt(0);
 
-	return isQuote(quote) && str[str.length - 1] === quote;
+	// 34 = ", 39 = '
+	if (first !== 34 && first !== 39) return false;
+
+	return str.charCodeAt(len - 1) === first;
 }
 
 /**
@@ -164,19 +204,66 @@ export function isQuotedString(str) {
  * @returns {string} Unquoted string.
  */
 export function unquoteString(str) {
-	return isQuotedString(str)
-		? str.slice(1, -1).replace(/\\(['"\\])/g, "$1")
-		: str;
+	if (!isQuotedString(str)) return str;
+
+	const len = str.length;
+	let i = 1;
+	let escaped = false;
+	let out = "";
+
+	while (i < len - 1) {
+		const c = str.charCodeAt(i);
+
+		if (c === 92 && !escaped) {
+			escaped = true;
+			i++;
+			continue;
+		}
+
+		out += str[i];
+		escaped = false;
+		i++;
+	}
+
+	return out;
 }
 
 /**
  * Tests if token is a valid identifier.
+ * The same with the regex pattern `/^[A-Za-z_$][A-Za-z0-9_$]*$/`but much faster.
  *
  * @param {string} token - Token to test.
  * @returns {boolean} True if valid.
  */
 export function isPathToken(token) {
-	return PATH_TOKEN_REGEX.test(token);
+	let code = token.charCodeAt(0);
+
+	// First character: A-Z, a-z, _, $
+	if (!(
+		(code >= 65 && code <= 90) ||   // A-Z
+		(code >= 97 && code <= 122) ||  // a-z
+		code === 95 ||                  // _
+		code === 36                     // $
+	)) {
+		return false;
+	}
+
+	const len = token.length;
+
+	for (let i = 1; i < len; i++) {
+		code = token.charCodeAt(i);
+		if (!(
+			(code >= 65 && code <= 90) ||    // A-Z
+			(code >= 97 && code <= 122) ||   // a-z
+			(code >= 48 && code <= 57) ||    // 0-9
+			code === 95 ||                   // _
+			code === 36                      // $
+		)) {
+			return false;
+		}
+	}
+
+	return true;
 }
 
 /**
@@ -191,13 +278,7 @@ export function isPathToken(token) {
  * @returns {boolean} True if valid.
  */
 export function isPathPath(path) {
-	const trimmed = path.trim();
-
-	if (!trimmed) {
-		return false;
-	}
-
-	const segments = trimmed.split(".");
+	const segments = path.split(".");
 
 	for (let i = 0; i < segments.length; i++) {
 		if (!isPathToken(segments[i])) {
