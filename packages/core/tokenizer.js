@@ -350,12 +350,11 @@ export function classifyToken(token) {
  * @returns {Token}
  */
 export function tokenFrom(raw) {
-	const trimmed = raw.trim();
-	const quoted = isQuotedString(trimmed);
+	const quoted = isQuotedString(raw);
 
 	return {
-		raw: trimmed,
-		value: quoted ? unquoteString(trimmed) : trimmed,
+		raw,
+		value: quoted ? unquoteString(raw) : raw,
 		quoted,
 	};
 }
