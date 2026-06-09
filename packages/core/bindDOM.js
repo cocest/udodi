@@ -1065,7 +1065,7 @@ function parseStyleDeclarations(value) {
 		const parts = splitFirstUnquoted(decl, ":");
 		if (!parts[0] || parts[1] === undefined) continue;
 
-		result.push([parts[0].trim(), parts[1].trim()]);
+		result.push([parts[0], parts[1]]);
 	}
 
 	return result;
@@ -1126,8 +1126,8 @@ function parseStyleBinding(context, item) {
 		return createStyleDeclarationBinding(context, item);
 	}
 
-	const left = parts[0].trim();
-	const right = parts[1].trim();
+	const left = parts[0];
+	const right = parts[1];
 	const leftToken = classifyToken(left);
 
 	// Quoted left side: conditional style declarations (e.g. 'color: red':hasError)
@@ -1258,7 +1258,7 @@ function parseRules(str) {
 		const parts = splitFirstUnquoted(rule, ":");
 		const name = parts[0];
 		const arg = parts[1];
-		return { name: name.trim(), arg: arg ? arg.trim() : null };
+		return { name, arg: arg ? arg : null };
 	});
 }
 
