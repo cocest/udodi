@@ -676,37 +676,60 @@ Modals are a common use case for reactive props:
 
 ```javascript
 export const UserModal = createComponent({
-	template: (ctx) => `
+	template: () => `
 		<div class="modal">
 			<h2>Edit User</h2>
-			<input @bind="user.name" placeholder="Name">
-			<button @on="click:save">Save</button>
+
+			<input
+				@bind="user.name"
+				placeholder="Name"
+			>
+
+			<button @on="click:save">
+				Save
+			</button>
 		</div>
 	`,
 
 	handlers: {
 		save(ctx) {
 			console.log("Saving:", ctx.user);
-		}
-	}
+
+			ctx.close(true);
+		},
+	},
 });
 
 export const UserPage = createComponent({
 	state: {
-		user: { name: "Jane" },
-		showModal: false
+		user: {
+			name: "Jane",
+		},
 	},
 
 	handlers: {
-		openModal(ctx) {
-			ctx.showModal = true;
-		}
+		async editUser(ctx) {
+			const result = await openModal(
+				(close) =>
+					UserModal({
+						user: bindProp(ctx.user),
+						close,
+					}),
+				{
+					closeOnBackdrop: true,
+					closeOnEscape: true,
+				}
+			);
+
+			console.log("Modal closed:", result);
+		},
 	},
 
-	template: (ctx) => `
-		<button @on="click:openModal">Edit User</button>
-		${ctx.showModal ? openModal(UserModal({ user: bindProp(ctx.user) })) : ""}
-	`
+	template: () => `
+		<button @on="click:editUser">
+			Edit User
+		</button>
+	`,
 });
 ```
 
