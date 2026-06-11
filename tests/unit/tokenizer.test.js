@@ -9,13 +9,17 @@ import {
 	isEscaped,
 	isQuotedString,
 	unquoteString,
-	splitOutsideQuotes,
-	splitBindingsBySpace,
 	splitUnquoted,
+	splitBindingsBySpace,
+	splitFirstUnquoted,
 	isPathToken,
 	isPathPath,
 	classifyToken,
+	tokenFrom,
 	parseResolver,
+	scanQuoted,
+	SCAN_DELIMITER,
+	SCAN_WHITESPACE,
 } from "../../packages/core/tokenizer.js";
 
 describe("Tokenizer", () => {
@@ -80,35 +84,24 @@ describe("Tokenizer", () => {
 		});
 	});
 
-	describe("splitOutsideQuotes", () => {
-		it("split by spaces respecting quotes", () => {
-			const result = splitOutsideQuotes(
-				"user.name 'hello world' count",
-				null,
-				true
-			);
-			expect(result).toHaveLength(3);
-			expect(result[0]).toBe("user.name");
-			expect(result[1]).toBe("'hello world'");
-			expect(result[2]).toBe("count");
+	describe("scanQuoted", () => {
+		it("delimiter mode - splits on delimiter outside quotes", () => {
+			const tokens = [];
+			scanQuoted("a,b,'c,d',e", (s, e) => tokens.push("a,b,'c,d',e".slice(s, e)), SCAN_DELIMITER, ",");
+			expect(tokens).toEqual(["a", "b", "'c,d'", "e"]);
+		});
+
+		it("whitespace mode - splits on whitespace outside quotes", () => {
+			const tokens = [];
+			scanQuoted("foo bar 'hello world'  baz", (s, e) => tokens.push("foo bar 'hello world'  baz".slice(s, e)), SCAN_WHITESPACE);
+			expect(tokens).toEqual(["foo", "bar", "'hello world'", "baz"]);
 		});
 
 		it("throws on unclosed quote", () => {
 			expect(() => {
-				splitOutsideQuotes("'unclosed string", null, true);
+				const tokens = [];
+				scanQuoted("'unclosed string", (s, e) => tokens.push(""), SCAN_DELIMITER, ",");
 			}).toThrow(/Unclosed quoted string/);
-		});
-
-		it("colon separator with quoted args", () => {
-			const result = splitOutsideQuotes(
-				"formatDate:createdAt:'MMM DD, YYYY'",
-				":",
-				false
-			);
-			expect(result).toHaveLength(3);
-			expect(result[0]).toBe("formatDate");
-			expect(result[1]).toBe("createdAt");
-			expect(result[2]).toBe("'MMM DD, YYYY'");
 		});
 	});
 
@@ -126,36 +119,47 @@ describe("Tokenizer", () => {
 			]);
 		});
 
-		it("handles spaces and multiple separators", () => {
-			expect(splitUnquoted("one , two , 'three, four'", ",")).toEqual([
-				"one",
-				"two",
-				"'three, four'",
+		it("works with colon separator", () => {
+			expect(splitUnquoted("formatDate:createdAt:'MMM DD, YYYY'", ":")).toEqual([
+				"formatDate",
+				"createdAt",
+				"'MMM DD, YYYY'",
 			]);
 		});
 
-		it("works with colon separator", () => {
-			expect(splitUnquoted("formatDate:createdAt:'MMM DD, YYYY'", ":")).toEqual(
-				["formatDate", "createdAt", "'MMM DD, YYYY'"],
-			);
-		});
-
 		it("returns original string when no separator found", () => {
-			const result = splitUnquoted("singleToken", ",");
-			expect(result).toEqual(["singleToken"]);
+			expect(splitUnquoted("singleToken", ",")).toEqual(["singleToken"]);
 		});
 
 		it("handles empty string", () => {
 			expect(splitUnquoted("", ",")).toEqual([]);
+		});
+
+		it("preserves empty tokens", () => {
+			expect(splitUnquoted("a,,b", ",")).toEqual(["a", "", "b"]);
 		});
 	});
 
 	describe("splitBindingsBySpace", () => {
 		it("multiple space-separated bindings", () => {
 			const result = splitBindingsBySpace("item:index todos");
-			expect(result).toHaveLength(2);
-			expect(result[0]).toBe("item:index");
-			expect(result[1]).toBe("todos");
+			expect(result).toEqual(["item:index", "todos"]);
+		});
+
+		it("respects quoted strings with spaces", () => {
+			const result = splitBindingsBySpace('foo "bar baz" qux');
+			expect(result).toEqual(['foo', '"bar baz"', 'qux']);
+		});
+	});
+
+	describe("splitFirstUnquoted", () => {
+		it("splits on first delimiter outside quotes", () => {
+			expect(splitFirstUnquoted("key:value", ":")).toEqual(["key", "value"]);
+			expect(splitFirstUnquoted("name:'John Doe'", ":")).toEqual(["name", "'John Doe'"]);
+		});
+
+		it("returns single item if no delimiter", () => {
+			expect(splitFirstUnquoted("singleToken", ":")).toEqual(["singleToken"]);
 		});
 	});
 
@@ -210,6 +214,20 @@ describe("Tokenizer", () => {
 		});
 	});
 
+	describe("tokenFrom", () => {
+		it("converts raw token to structured token", () => {
+			const t1 = tokenFrom("'hello world'");
+			expect(t1.raw).toBe("'hello world'");
+			expect(t1.value).toBe("hello world");
+			expect(t1.quoted).toBe(true);
+
+			const t2 = tokenFrom("user.name");
+			expect(t2.raw).toBe("user.name");
+			expect(t2.value).toBe("user.name");
+			expect(t2.quoted).toBe(false);
+		});
+	});
+
 	describe("parseResolver", () => {
 		it("basic resolver", () => {
 			const result = parseResolver("formatDate:createdAt");
@@ -241,12 +259,9 @@ describe("Tokenizer", () => {
 
 	describe("Edge Cases", () => {
 		it("special characters in quoted strings", () => {
-			const tokens = splitOutsideQuotes(
-				"'hello:world|test@example'",
-				"|",
-				false
-			);
-			expect(tokens[0]).toBe("'hello:world|test@example'");
+			expect(splitUnquoted("'hello:world|test@example'", "|")).toEqual([
+				"'hello:world|test@example'"
+			]);
 		});
 
 		it("nested quote types in string literals", () => {
@@ -255,6 +270,10 @@ describe("Tokenizer", () => {
 
 			expect(isQuotedString('"it\'s"')).toBe(true);
 			expect(unquoteString('"it\'s"')).toBe("it's");
+		});
+
+		it("empty tokens and trailing delimiter", () => {
+			expect(splitUnquoted("a,b,", ",")).toEqual(["a", "b", ""]);
 		});
 	});
 });

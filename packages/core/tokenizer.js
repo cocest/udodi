@@ -1,12 +1,29 @@
 /**
- * Tokenizer Module - Consolidated directive expression parsing.
- * Handles quoted strings, dot-paths, and resolver syntax.
+ * Quote-aware scanner utilities.
+ *
+ * These helpers are intended as the foundation
+ * for Udodi's lexer and directive parser.
  */
 
 /**
- * Checks if a character is a quote.
- * @param {string} ch - Single character to test.
- * @returns {boolean} True if ch is ' or "
+ * Scanner mode: split on delimiter.
+ *
+ * @type {number}
+ */
+export const SCAN_DELIMITER = 1;
+
+/**
+ * Scanner mode: split on whitespace.
+ *
+ * @type {number}
+ */
+export const SCAN_WHITESPACE = 2;
+
+/**
+ * Returns true if character is a quote.
+ *
+ * @param {string} ch - Character.
+ * @returns {boolean}
  */
 export function isQuote(ch) {
 	return ch === "'" || ch === '"';
@@ -33,188 +50,16 @@ export function isEscaped(str, index) {
 }
 
 /**
- * Splits a string outside quoted regions.
+ * Returns true if string is enclosed
+ * by matching quotes.
  *
- * Supports:
- * - delimiter splitting
- * - whitespace splitting
+ * Examples:
  *
- * Throws if quotes are unclosed.
+ * "hello"
+ * 'hello'
  *
- * @param {string} str - String to split.
- * @param {string|null} delimiter - Delimiter character.
- * @param {boolean} whitespace - Whether to split by whitespace.
- * @returns {string[]} Array of trimmed tokens.
- */
-export function splitOutsideQuotes(
-	str,
-	delimiter = null,
-	whitespace = false
-) {
-	if (str.length === 0) return [];
-
-	const tokens = [];
-	const delimiterCode = delimiter ? delimiter.charCodeAt(0) : 0;
-
-	let start = 0;
-	let quote = 0;
-	let escaped = false;
-
-	const len = str.length;
-
-	for (let i = 0; i < len; i++) {
-		const code = str.charCodeAt(i);
-
-		// Backslash
-		if (code === 92) {
-			escaped = !escaped;
-			continue;
-		}
-
-		// Quotes
-		if ((code === 34 || code === 39) && !escaped) {
-			if (quote === 0) {
-				quote = code;
-			} else if (quote === code) {
-				quote = 0;
-			}
-
-			continue;
-		}
-
-		escaped = false;
-
-		let separator = false;
-
-		if (quote === 0) {
-			if (whitespace) {
-				// space, tab, newline, carriage return
-				separator =
-					code === 32 ||
-					code === 9 ||
-					code === 10 ||
-					code === 13;
-			} else {
-				separator = code === delimiterCode;
-			}
-		}
-
-		if (separator) {
-			let s = start;
-			let e = i;
-
-			// left trim
-			while (s < e && str.charCodeAt(s) <= 32) s++;
-
-			// right trim
-			while (e > s && str.charCodeAt(e - 1) <= 32) e--;
-
-			if (s < e) {
-				tokens.push(str.slice(s, e));
-			}
-
-			start = i + 1;
-		}
-	}
-
-	if (quote !== 0) {
-		throw new Error(`Unclosed quoted string in directive: ${str}`);
-	}
-
-	let s = start;
-	let e = len;
-
-	while (s < e && str.charCodeAt(s) <= 32) s++;
-	while (e > s && str.charCodeAt(e - 1) <= 32) e--;
-
-	if (s < e) {
-		tokens.push(str.slice(s, e));
-	}
-
-	return tokens;
-}
-
-/**
- * Splits a string by spaces,
- * respecting quoted regions.
- *
- * @param {string} str - String to split.
- * @returns {string[]} Array of tokens.
- */
-export function splitBindingsBySpace(str) {
-	return splitOutsideQuotes(str, null, true);
-}
-
-/**
- * Splits a string by delimiter
- * outside quoted regions.
- *
- * @param {string} str - String to split.
- * @param {string} delimiter - Delimiter character.
- * @returns {string[]} Array of tokens.
- */
-export function splitUnquoted(str, delimiter) {
-	return splitOutsideQuotes(str, delimiter, false);
-}
-
-/**
- * Splits a string once by the first occurrence of delimiter
- * outside of quoted regions.
- *
- * Returns at most 2 parts: [left, right] or [str] if no delimiter found.
- *
- * @param {string} str - String to split.
- * @param {string} delimiter - Delimiter character (e.g. ':')
- * @returns {string[]}
- */
-export function splitFirstUnquoted(str, delimiter) {
-	const len = str.length;
-	const delimCode = delimiter.charCodeAt(0);
-
-	let quote = 0;      // 0 = no quote, 34 = ", 39 = '
-	let escaped = false;
-
-	for (let i = 0; i < len; i++) {
-		const c = str.charCodeAt(i);
-
-		if (escaped) {
-			escaped = false;
-			continue;
-		}
-
-		if (c === 92) { // backslash '\'
-			escaped = true;
-			continue;
-		}
-
-		// Toggle quote state
-		if (c === 34 || c === 39) { // " or '
-			if (quote === 0) {
-				quote = c;
-			} else if (quote === c) {
-				quote = 0;
-			}
-			continue;
-		}
-
-		// Found unquoted delimiter
-		if (quote === 0 && c === delimCode) {
-			return [
-				str.slice(0, i).trim(),
-				str.slice(i + 1).trim()
-			];
-		}
-	}
-
-	// No delimiter found
-	return [str.trim()];
-}
-
-/**
- * Checks if a string is properly quoted.
- *
- * @param {string} str - String to test.
- * @returns {boolean} True if quoted.
+ * @param {string} str
+ * @returns {boolean}
  */
 export function isQuotedString(str) {
 	const len = str.length;
@@ -229,34 +74,265 @@ export function isQuotedString(str) {
 }
 
 /**
- * Removes quotes and unescapes content.
+ * Removes surrounding quotes and
+ * unescapes quoted content.
  *
- * @param {string} str - Quoted string.
- * @returns {string} Unquoted string.
+ * Examples:
+ *
+ * "'hello'" -> "hello"
+ * "'it\\'s'" -> "it's"
+ *
+ * @param {string} str
+ * @returns {string}
  */
 export function unquoteString(str) {
-	if (!isQuotedString(str)) return str;
+	if (!isQuotedString(str)) {
+		return str;
+	}
 
 	const len = str.length;
-	let i = 1;
-	let escaped = false;
-	let out = "";
 
-	while (i < len - 1) {
+	let result = "";
+
+	for (let i = 1; i < len - 1; i++) {
+		const c = str.charCodeAt(i);
+
+		// '\'
+		if (c === 92 && i + 1 < len - 1) {
+			result += str[++i];
+			continue;
+		}
+
+		result += str[i];
+	}
+
+	return result;
+}
+
+/**
+ * Scans a string while respecting
+ * quoted regions.
+ *
+ * Emits token ranges.
+ *
+ * Callback receives:
+ *
+ * (start, end)
+ *
+ * where:
+ *
+ * str.slice(start, end)
+ *
+ * is the token.
+ *
+ * @param {string} str
+ * @param {(start:number,end:number)=>void} onToken
+ * @param {number} mode
+ * @param {string|null} [delimiter=null]
+ */
+export function scanQuoted(str, onToken, mode, delimiter = null) {
+	const len = str.length;
+
+	if (len === 0) {
+		return;
+	}
+
+	let quote = 0;
+	let escaped = false;
+	let start = 0;
+
+	const delimCode =
+		mode === SCAN_DELIMITER && delimiter ? delimiter.charCodeAt(0) : 0;
+
+	for (let i = 0; i < len; i++) {
+		const c = str.charCodeAt(i);
+
+		// Escape
+		if (c === 92 && !escaped) {
+			escaped = true;
+			continue;
+		}
+
+		// Quote handling
+		if ((c === 34 || c === 39) && !escaped) {
+			if (quote === 0) {
+				quote = c;
+			} else if (quote === c) {
+				quote = 0;
+			}
+
+			continue;
+		}
+
+		escaped = false;
+
+		// ----------------------------------
+		// Delimiter mode
+		// ----------------------------------
+
+		if (mode === SCAN_DELIMITER && quote === 0 && c === delimCode) {
+			onToken(start, i);
+			start = i + 1;
+			continue;
+		}
+
+		// ----------------------------------
+		// Whitespace mode
+		// ----------------------------------
+
+		if (mode === SCAN_WHITESPACE && quote === 0 && c <= 32) {
+			if (start < i) {
+				onToken(start, i);
+			}
+
+			i++;
+
+			while (i < len && str.charCodeAt(i) <= 32) {
+				i++;
+			}
+
+			start = i;
+			i--;
+		}
+	}
+
+	if (quote !== 0) {
+		throw new Error(`Unclosed quoted string: ${str}`);
+	}
+
+	onToken(start, len);
+}
+
+/**
+ * Splits a string by delimiter
+ * outside quoted regions.
+ *
+ * Empty tokens are preserved.
+ *
+ * Examples:
+ *
+ * a:b:c
+ * -> ["a","b","c"]
+ *
+ * a::c
+ * -> ["a","","c"]
+ *
+ * @param {string} str
+ * @param {string} delimiter
+ * @returns {string[]}
+ */
+export function splitUnquoted(str, delimiter) {
+	if (!str) {
+		return [];
+	}
+
+	const tokens = [];
+
+	scanQuoted(
+		str,
+		(start, end) => {
+			tokens.push(str.slice(start, end));
+		},
+		SCAN_DELIMITER,
+		delimiter,
+	);
+
+	return tokens;
+}
+
+/**
+ * Splits a string by whitespace
+ * outside quoted regions.
+ *
+ * Examples:
+ *
+ * foo bar baz
+ * -> ["foo","bar","baz"]
+ *
+ * foo "bar baz"
+ * -> ["foo","\"bar baz\""]
+ *
+ * @param {string} str
+ * @returns {string[]}
+ */
+export function splitBindingsBySpace(str) {
+	if (!str) {
+		return [];
+	}
+
+	const tokens = [];
+
+	scanQuoted(
+		str,
+		(start, end) => {
+			if (start < end) {
+				tokens.push(str.slice(start, end));
+			}
+		},
+		SCAN_WHITESPACE,
+	);
+
+	return tokens;
+}
+
+/**
+ * Splits once by delimiter
+ * outside quoted regions.
+ *
+ * Returns:
+ *
+ * [left]
+ *
+ * or
+ *
+ * [left, right]
+ *
+ * @param {string} str
+ * @param {string} delimiter
+ * @returns {string[]}
+ */
+export function splitFirstUnquoted(str, delimiter) {
+	if (!str) {
+		return [""];
+	}
+
+	const delimCode = delimiter.charCodeAt(0);
+
+	const len = str.length;
+
+	let quote = 0;
+	let escaped = false;
+
+	for (let i = 0; i < len; i++) {
 		const c = str.charCodeAt(i);
 
 		if (c === 92 && !escaped) {
 			escaped = true;
-			i++;
 			continue;
 		}
 
-		out += str[i];
+		if ((c === 34 || c === 39) && !escaped) {
+			if (quote === 0) {
+				quote = c;
+			} else if (quote === c) {
+				quote = 0;
+			}
+
+			continue;
+		}
+
 		escaped = false;
-		i++;
+
+		if (quote === 0 && c === delimCode) {
+			return [str.slice(0, i), str.slice(i + 1)];
+		}
 	}
 
-	return out;
+	if (quote !== 0) {
+		throw new Error(`Unclosed quoted string: ${str}`);
+	}
+
+	return [str];
 }
 
 /**
@@ -309,15 +385,15 @@ export function isPathToken(token) {
  * @returns {boolean} True if valid.
  */
 export function isPathPath(path) {
-	const segments = path.split(".");
+    const segments = path.split(".");
 
-	for (let i = 0; i < segments.length; i++) {
-		if (!isPathToken(segments[i])) {
-			return false;
-		}
-	}
+    for (let i = 0; i < segments.length; i++) {
+        if (!isPathToken(segments[i])) {
+            return false;
+        }
+    }
 
-	return true;
+    return true;
 }
 
 /**
@@ -342,23 +418,17 @@ export function classifyToken(token) {
 		return { type: "invalid" };
 	}
 
-	const trimmed = token.trim();
-
-	if (!trimmed) {
-		return { type: "invalid" };
-	}
-
-	if (isQuotedString(trimmed)) {
+	if (isQuotedString(token)) {
 		return {
 			type: "literal",
-			value: unquoteString(trimmed),
+			value: unquoteString(token),
 		};
 	}
 
-	if (isPathPath(trimmed)) {
+	if (isPathPath(token)) {
 		return {
 			type: "path",
-			value: trimmed,
+			value: token,
 		};
 	}
 
@@ -381,13 +451,13 @@ export function classifyToken(token) {
  * @returns {Token}
  */
 export function tokenFrom(raw) {
-	const quoted = isQuotedString(raw);
+    const quoted = isQuotedString(raw);
 
-	return {
-		raw,
-		value: quoted ? unquoteString(raw) : raw,
-		quoted,
-	};
+    return {
+        raw,
+        value: quoted ? unquoteString(raw) : raw,
+        quoted,
+    };
 }
 
 /**
@@ -410,20 +480,20 @@ export function tokenFrom(raw) {
  * @returns {ResolverInfo|null}
  */
 export function parseResolver(expr) {
-	const parts = splitUnquoted(expr, ":");
+    const parts = splitUnquoted(expr, ":");
 
-	if (parts.length < 2) {
-		return null;
-	}
+    if (parts.length < 2) {
+        return null;
+    }
 
-	const resolver = parts.shift();
+    const resolver = parts.shift();
 
-	if (!resolver || !isPathToken(resolver)) {
-		return null;
-	}
+    if (!resolver || !isPathToken(resolver)) {
+        return null;
+    }
 
-	return {
-		resolver,
-		args: parts.map(tokenFrom),
-	};
+    return {
+        resolver,
+        args: parts.map(tokenFrom),
+    };
 }
