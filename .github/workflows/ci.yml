@@ -11,6 +11,9 @@ on:
       - develop
       - main
 
+  # Allows you to manually trigger this workflow from the GitHub Actions tab
+  workflow_dispatch:
+
 jobs:
   test-build:
     runs-on: ubuntu-latest
