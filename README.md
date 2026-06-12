@@ -29,7 +29,7 @@ into a compact runtime that works both with and without a build step.
   <h3 @text="nameError"></h3>
 
   <button @on="click.prevent:submit">
-    Save
+    Save Changes
   </button>
 </div>
 ```
