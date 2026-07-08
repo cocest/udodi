@@ -13,13 +13,9 @@ const DIRECTIVES = {
     '@ref': 'ref',
     '@teleport': 'teleport',
     '@validate': 'validate',
+    '@form': 'form',
+    '@submit': 'submit',
 };
-
-export const DIRECTIVE_ATTRIBUTES = [
-    ...Object.keys(DIRECTIVES),
-    '@key',
-    '@validate-error',
-];
 
 /**
  * @import { DirectiveGroups } from '../types/directives.js'
@@ -47,7 +43,9 @@ export function extractAllDirectives(root) {
         attr: [],
         ref: [],
         teleport: [],
-        validate: []
+        validate: [],
+        form: [],
+        submit: [],
     };
 
     const stack = [root];
@@ -59,6 +57,14 @@ export function extractAllDirectives(root) {
             continue;
         }
 
+        // @for is a template boundary.
+        // Register only the @for directive and do not scan any other
+        // directives on this element or its descendants.
+        if (node.hasAttribute("@for")) {
+            directives.for.push(node);
+            continue;
+        }
+
         // Scan only existing attributes
         for (const attr of node.attributes) {
             const directive = DIRECTIVES[attr.name];
@@ -66,11 +72,6 @@ export function extractAllDirectives(root) {
             if (directive) {
                 directives[directive].push(node);
             }
-        }
-
-        // Skip descendants of @for
-        if (node.hasAttribute('@for')) {
-            continue;
         }
 
         // Preserve DOM order

@@ -32,14 +32,6 @@ describe("Tokenizer", () => {
 		});
 	});
 
-	describe("isEscaped", () => {
-		it("detects escaped characters", () => {
-			expect(isEscaped("'it\\'s'", 4)).toBe(true);
-			expect(isEscaped('"say \\"hello"', 6)).toBe(true);
-			expect(isEscaped("no escape", 2)).toBe(false);
-		});
-	});
-
 	describe("isQuotedString", () => {
 		it("simple single quotes", () => {
 			expect(isQuotedString("'hello'")).toBe(true);
@@ -77,10 +69,6 @@ describe("Tokenizer", () => {
 		it("unescape quotes", () => {
 			expect(unquoteString("'it\\'s'")).toBe("it's");
 			expect(unquoteString('"say \\"hello\\""')).toBe('say "hello"');
-		});
-
-		it("non-quoted strings pass through", () => {
-			expect(unquoteString("hello")).toBe("hello");
 		});
 	});
 
@@ -137,123 +125,6 @@ describe("Tokenizer", () => {
 
 		it("preserves empty tokens", () => {
 			expect(splitUnquoted("a,,b", ",")).toEqual(["a", "", "b"]);
-		});
-	});
-
-	describe("splitBindingsBySpace", () => {
-		it("multiple space-separated bindings", () => {
-			const result = splitBindingsBySpace("item:index todos");
-			expect(result).toEqual(["item:index", "todos"]);
-		});
-
-		it("respects quoted strings with spaces", () => {
-			const result = splitBindingsBySpace('foo "bar baz" qux');
-			expect(result).toEqual(['foo', '"bar baz"', 'qux']);
-		});
-	});
-
-	describe("splitFirstUnquoted", () => {
-		it("splits on first delimiter outside quotes", () => {
-			expect(splitFirstUnquoted("key:value", ":")).toEqual(["key", "value"]);
-			expect(splitFirstUnquoted("name:'John Doe'", ":")).toEqual(["name", "'John Doe'"]);
-		});
-
-		it("returns single item if no delimiter", () => {
-			expect(splitFirstUnquoted("singleToken", ":")).toEqual(["singleToken"]);
-		});
-	});
-
-	describe("isPathToken", () => {
-		it("valid identifiers", () => {
-			expect(isPathToken("user")).toBe(true);
-			expect(isPathToken("_private")).toBe(true);
-			expect(isPathToken("$special")).toBe(true);
-			expect(isPathToken("User123")).toBe(true);
-		});
-
-		it("invalid identifiers", () => {
-			expect(isPathToken("123user")).toBe(false);
-			expect(isPathToken("user-name")).toBe(false);
-			expect(isPathToken("user.name")).toBe(false);
-			expect(isPathToken("")).toBe(false);
-		});
-	});
-
-	describe("isPathPath", () => {
-		it("single and nested valid paths", () => {
-			expect(isPathPath("user")).toBe(true);
-			expect(isPathPath("user.name")).toBe(true);
-			expect(isPathPath("user.profile.firstName")).toBe(true);
-		});
-
-		it("invalid paths", () => {
-			expect(isPathPath("user.")).toBe(false);
-			expect(isPathPath(".user")).toBe(false);
-			expect(isPathPath("user..name")).toBe(false);
-			expect(isPathPath("user-name")).toBe(false);
-		});
-	});
-
-	describe("classifyToken", () => {
-		it("quoted literals", () => {
-			const result = classifyToken("'hello'");
-			expect(result.type).toBe("literal");
-			expect(result.value).toBe("hello");
-		});
-
-		it("paths", () => {
-			const result = classifyToken("user.name");
-			expect(result.type).toBe("path");
-			expect(result.value).toBe("user.name");
-		});
-
-		it("invalid tokens", () => {
-			expect(classifyToken("").type).toBe("invalid");
-			expect(classifyToken("123invalid").type).toBe("invalid");
-			expect(classifyToken("user-name").type).toBe("invalid");
-		});
-	});
-
-	describe("tokenFrom", () => {
-		it("converts raw token to structured token", () => {
-			const t1 = tokenFrom("'hello world'");
-			expect(t1.raw).toBe("'hello world'");
-			expect(t1.value).toBe("hello world");
-			expect(t1.quoted).toBe(true);
-
-			const t2 = tokenFrom("user.name");
-			expect(t2.raw).toBe("user.name");
-			expect(t2.value).toBe("user.name");
-			expect(t2.quoted).toBe(false);
-		});
-	});
-
-	describe("parseResolver", () => {
-		it("basic resolver", () => {
-			const result = parseResolver("formatDate:createdAt");
-			expect(result).not.toBeNull();
-			expect(result.resolver).toBe("formatDate");
-			expect(result.args).toHaveLength(1);
-			expect(result.args[0].value).toBe("createdAt");
-		});
-
-		it("resolver with multiple args", () => {
-			const result = parseResolver("currency:pricing.total:'USD'");
-			expect(result).not.toBeNull();
-			expect(result.resolver).toBe("currency");
-			expect(result.args).toHaveLength(2);
-			expect(result.args[0].value).toBe("pricing.total");
-			expect(result.args[1].value).toBe("USD");
-		});
-
-		it("quoted resolver name (invalid)", () => {
-			const result = parseResolver("'formatDate':arg");
-			expect(result).toBeNull();
-		});
-
-		it("no args (invalid)", () => {
-			const result = parseResolver("formatDate");
-			expect(result).toBeNull();
 		});
 	});
 

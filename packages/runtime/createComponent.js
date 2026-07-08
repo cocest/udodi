@@ -5,6 +5,8 @@ import {
 	isReactiveProp,
 	unwrapReactiveProp,
 } from "../reactivity/index.js";
+
+import { readonly } from "./readonly.js";
 import { addComponent } from "../runtime/componentRegistry.js";
 import { runScopeCleanup } from "../runtime/lifecycle.js";
 
@@ -14,7 +16,6 @@ const RESERVED_KEYWORDS = new Set([
 	"state",
 	"computed",
 	"interceptors",
-	"handlers",
 	"methods",
 	"watch",
 	"template",
@@ -22,6 +23,7 @@ const RESERVED_KEYWORDS = new Set([
 	"onUnmount",
 	"refs",
 	"style",
+	"ud",
 ]);
 
 /**
@@ -31,7 +33,7 @@ const RESERVED_KEYWORDS = new Set([
  * @param {Map<string, string>} registry - Key registry.
  * @param {string} key - Context property name.
  * @param {string} namespaceName - Source namespace
- *   (e.g. "state", "computed", "methods", "handlers", "props").
+ *   (e.g. "state", "computed", "methods", "props").
  * @param {string} componentName - Component name for error reporting.
  * @throws {Error} If the key is reserved or already registered.
  */
@@ -54,7 +56,7 @@ function registerAndVerifyKey(
 		throw new Error(
 			`[createComponent] Namespace Collision in Component "${componentName}": ` +
 			`The key "${key}" declared in "${namespaceName}" conflicts with the existing "${key}" declared in "${existingNamespace}". ` +
-			`All root-level state, computed properties, methods, handlers, and props must have unique names.`
+			`All root-level state, computed properties, methods, and props must have unique names.`
 		);
 	}
 
@@ -81,8 +83,7 @@ export function createComponent({
 	state = {},                   // for reactive state (auto-tracked by framework)
 	computed: computedProps = {}, // for computed properties
 	interceptors = {},            // for data transformations before state updates
-	handlers = {},                // for event handlers (auto-bound with context)
-	methods = {},                 // for normal functions (formatters, helpers, etc.)
+	methods = {},                 // for event handlers and normal functions (formatters, helpers, etc.)
 	watch = {},                   // for watching reactive state changes
 	template = "",
 	onMount = null,
@@ -97,7 +98,6 @@ export function createComponent({
 	 * Used to prevent collisions between:
 	 * - state
 	 * - computed
-	 * - handlers
 	 * - methods
 	 * - props
 	 */
@@ -119,7 +119,6 @@ export function createComponent({
 	const configurationGroups = [
 		[state, "state"],
 		[computedProps, "computed"],
-		[handlers, "handlers"],
 		[methods, "methods"]
 	];
 
@@ -139,6 +138,28 @@ export function createComponent({
 	}
 
 	/**
+	 * Creates a safe shallow copy of component state for each instance.
+	 *
+	 * This avoids the fragility of structuredClone() for real-world state that
+	 * may contain functions, DOM nodes, or other non-cloneable values.
+	 *
+	 * A shallow copy is sufficient because Udodi's reactivity model is top-level
+	 * only; nested objects are not auto-proxied and should be replaced as a unit
+	 * when needed.
+	 */
+	function createInstanceState(sourceState) {
+		const instanceState = Object.create(null);
+		const keys = Object.keys(sourceState);
+
+		for (let i = 0; i < keys.length; i++) {
+			const key = keys[i];
+			instanceState[key] = sourceState[key];
+		}
+
+		return instanceState;
+	}
+	
+	/**
 	 * Creates a component instance.
 	 *
 	 * @param {Object<string, any>} [props={}] Component props.
@@ -155,13 +176,42 @@ export function createComponent({
 	function Component(props = {}) {
 		const propKeySet = new Set();
 
+		const internalState = createInstanceState(state);
+
+		// Initialize the framework namespace (ud)
+		internalState.ud = {
+			errors: Object.create(null), // For @validate and @error directives
+			forms: Object.create(null),  // For @form and @submit directives
+		};
+
 		// Initialize the reactive state engine
-		const stateStore = reactive(state, { interceptors });
+		const stateStore = reactive(internalState, { interceptors });
 
 		// Build the flat, highly accessible VM Context
 		const internalContext = {
 			refs: Object.create(null), // Reference for HTML element
 		};
+
+		Object.defineProperty(internalContext, "ud", {
+			get: () => stateStore.ud,
+			set: (value) => {
+				stateStore.ud = value;
+			},
+			enumerable: true,
+			configurable: true,
+		});
+
+		// Since the internalContext is not returned by reactive() function, 
+		// we need this configuration for touch() function to work.
+		Object.defineProperty(internalContext, "_state", {
+			value: stateStore,
+			enumerable: false,
+			configurable: false,
+			writable: false,
+		});
+
+		// Create a readonly membrane for the user-defined namespace (ud)
+		const publicUd = readonly(stateStore.ud);
 
 		// Target container for the mount-injected cleanup hook
 		let injectedCleanupFn = null;
@@ -169,7 +219,9 @@ export function createComponent({
 		// Secure callback membrane (The filtered 'ctx' passed to user functions)
 		const publicContextMembrane = new Proxy(internalContext, {
 			get(target, prop) {
+				if (prop === "_state") return target._state;
 				if (prop === "refs") return target.refs;
+				if (prop === "ud") return publicUd;
 				if (prop === "name") return compName;
 				if (prop === "cleanup") return injectedCleanupFn;
 
@@ -259,30 +311,20 @@ export function createComponent({
 			propKeySet.add(key);
 		}
 
-		// Event handlers with enhanced signature: (event, data)
-		const handlerNames = Object.keys(handlers);
-		for (let i = 0; i < handlerNames.length; i++) {
-			const handlerName = handlerNames[i];
-			const handlerFn = handlers[handlerName];
-
-			internalContext[handlerName] = (event, ...args) =>
-				handlerFn.call(publicContextMembrane, event, ...args);
-		}
-
-		// Methods (utility/helper functions)
+		// Methods (utility/handler/helper functions)
 		for (let i = 0; i < methodKeys.length; i++) {
 			const methodName = methodKeys[i];
-			const fn = methods[methodName];
+			const methodFn = methods[methodName];
 
-			if (typeof fn !== "function") {
+			if (typeof methodFn !== "function") {
 				continue;
 			}
 
 			internalContext[methodName] = (...args) =>
-				fn.call(publicContextMembrane, ...args);
+				methodFn.call(publicContextMembrane, ...args);
 		}
 
-		// Map state keys directly onto the base context for your VM interpreter
+		// Map state keys directly onto the base context for VM interpreter
 		for (let i = 0; i < stateKeys.length; i++) {
 			const key = stateKeys[i];
 
