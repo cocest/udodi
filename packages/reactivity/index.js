@@ -76,25 +76,43 @@ const effectStack = [];
 let currentEffect = null;
 
 /**
- * Creates a reactive signal - a primitive reactive value with getter and setter.
+ * Creates a reactive signal - a primitive reactive value with getter, setter,
+ * and manual trigger support.
  *
  * Signals are the foundation of the reactivity system. They track dependencies
  * when read (inside effects or computed) and notify dependents when updated.
  *
+ * The returned `trigger` function allows dependents to be notified without
+ * changing the stored value. This is useful for shallow reactive systems where
+ * nested objects may be mutated in place.
+ *
  * @param {any} initialValue - The initial value of the signal.
- * @returns {[get: () => any, set: (newValue: any) => void]}
- *   A tuple containing:
- *   - `get`: Function to read the current value (tracks dependencies)
- *   - `set`: Function to update the value and trigger effects
+ * @returns {[
+ *   get: () => any,
+ *   set: (newValue: any) => void,
+ *   trigger: () => void
+ * ]}
+ * A tuple containing:
+ * - `get`: Reads the current value and tracks reactive dependencies.
+ * - `set`: Updates the value and notifies dependents if the value changed.
+ * - `trigger`: Notifies dependents without modifying the current value.
  *
  * @example
  * const [count, setCount] = createSignal(0);
  *
  * effect(() => {
- *   console.log('Count is:', count());
+ *   console.log("Count is:", count());
  * });
  *
  * setCount(5); // Triggers the effect
+ *
+ * @example
+ * const [user, , triggerUser] = createSignal({
+ *   name: "John"
+ * });
+ *
+ * user().name = "Jane";
+ * triggerUser(); // Notify dependents after an in-place mutation
  */
 export function createSignal(initialValue) {
 	let value = initialValue;
@@ -108,19 +126,27 @@ export function createSignal(initialValue) {
 		return value;
 	};
 
+	const trigger = () => {
+        if (subscribers.size === 0) {
+            return;
+        }
+
+        for (const effect of subscribers) {
+            schedule(effect);
+        }
+    };
+
 	const set = (nextValue) => {
-		if (Object.is(value, nextValue)) return;
+        if (Object.is(value, nextValue)) {
+            return;
+        }
 
-		value = nextValue;
+		    value = nextValue;
 
-		if (subscribers.size === 0) return;
+        trigger();
+    };
 
-		for (const effect of subscribers) {
-			schedule(effect);
-		}
-	};
-
-	return [get, set];
+    return [get, set, trigger];
 }
 
 /**
@@ -279,6 +305,7 @@ export function computed(fn, scope) {
 // Tuple indexes for readability + minification friendliness
 const SIGNAL_GET = 0;
 const SIGNAL_SET = 1;
+const SIGNAL_TRIGGER = 2;
 
 /**
  * Applies an interceptor (if any) and commits the value.
@@ -316,6 +343,8 @@ function commit(prop, value, signal, target, interceptors) {
 
 	return true;
 }
+
+const reactiveTriggers = new WeakMap();
 
 /**
  * Creates a shallow reactive object backed by per-property signals.
@@ -389,7 +418,15 @@ export function reactive(initialState = {}, options = {}) {
 		target[key] = value;
 	}
 
-	return new Proxy(target, {
+	const trigger = (key) => {
+        const signal = signals.get(key);
+
+        if (signal !== undefined) {
+            signal[SIGNAL_TRIGGER]();
+        }
+    };
+
+	const proxy = new Proxy(target, {
 		get(target, prop) {
 			const signal = signals.get(prop);
 
@@ -442,6 +479,37 @@ export function reactive(initialState = {}, options = {}) {
 			return Reflect.getOwnPropertyDescriptor(target, prop);
 		},
 	});
+
+	reactiveTriggers.set(proxy, trigger);
+
+    return proxy;
+}
+
+/**
+ * Notifies subscribers that a shallow reactive property has been
+ * mutated in place without replacing its reference.
+ *
+ * This is primarily used after mutating nested objects in a shallow
+ * reactive state.
+ *
+ * @param {Object} proxy - Reactive object returned by `reactive()`.
+ * @param {PropertyKey} key - Root reactive property to notify.
+ * @returns {boolean}
+ */
+export function touch(proxy, key) {
+	if (typeof key !== "string" && typeof key !== "symbol") {
+        return false;
+    }
+
+    const state = proxy._state || proxy;
+	const trigger = reactiveTriggers.get(state);
+
+    if (!trigger) {
+        return false;
+    }
+
+    trigger(key);
+    return true;
 }
 
 const REACTIVE_BINDING = Symbol("REACTIVE_BINDING");

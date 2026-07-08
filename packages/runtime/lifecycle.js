@@ -49,10 +49,8 @@ export function runScopeCleanup(scope, label = "scope") {
 
     const effects = scope.effects;
 
-    if (effects) {
-        const effectsLength = effects.length;
-
-        for (let i = 0; i < effectsLength; i++) {
+    if (Array.isArray(effects)) {
+        for (let i = 0, length = effects.length; i < length; i++) {
             try {
                 effects[i](); // Execute reactive effect cleanup
             } catch (err) {
@@ -63,10 +61,8 @@ export function runScopeCleanup(scope, label = "scope") {
 
     const cleanups = scope.cleanups;
 
-    if (cleanups) {
-        const cleanupsLength = cleanups.length;
-
-        for (let i = 0; i < cleanupsLength; i++) {
+    if (Array.isArray(cleanups)) {
+        for (let i = 0, length = cleanups.length; i < length; i++) {
             try {
                 cleanups[i](); // Execute user-provided or registered cleanup
             } catch (err) {

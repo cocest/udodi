@@ -54,31 +54,99 @@ export function createEvaluator(context) {
 }
 
 /**
- * Evaluates a path expression (e.g. `user.profile.name`).
+ * Evaluates a compiled path expression against the given lexical scope.
  *
- * **Auto-unwrap rule:** If the final value is a zero-argument function,
- * it is automatically invoked. This is convenient for getters/computeds.
+ * The first segment is resolved by walking the explicit scope chain
+ * via `__parent`, allowing nested scopes (such as `@for`) to shadow
+ * parent variables without mutating the parent context.
+ *
+ * Once the root value is resolved, the remaining path segments are
+ * traversed normally. Any function encountered during traversal is
+ * automatically invoked, allowing reactive signal getters to be
+ * transparently unwrapped.
+ *
+ * @example
+ * ```js
+ * // Parent context
+ * { count: getCount }
+ *
+ * // Nested `@for` scope
+ * {
+ *   __parent: parentContext,
+ *   user: getUser,
+ *   userIndex: getIndex
+ * }
+ * ```
+ *
+ * Path resolution:
+ *
+ * @example
+ * ```js
+ * evaluatePath(scope, { segments: ["user", "name"] });
+ * // => getUser().name
+ *
+ * evaluatePath(scope, { segments: ["count"] });
+ * // => getCount()
+ * ```
+ *
+ * Time complexity:
+ * - Scope resolution: O(scope depth)
+ * - Path traversal: O(segment count)
  *
  * @param {Object} expr
+ *   Compiled path expression.
+ * 
  * @param {Object} context
+ *   The current lexical scope. May contain a `__parent` property
+ *   pointing to an outer scope.
+ *
+ * @param {string[]} expr.segments
+ *   Ordered path segments to resolve.
+ *
  * @returns {*}
+ *   The resolved value, or `undefined` if the root identifier cannot
+ *   be found. Returns `null` or `undefined` immediately if encountered
+ *   during traversal.
  */
 function evaluatePath(expr, context) {
-	if (!context) return undefined;
-
 	const segments = expr.segments;
 	const length = segments.length;
 
-	let obj = context;
+	let obj;
+	const firstSegment = segments[0];
 
-	for (let i = 0; i < length; i++) {
-		if (obj == null) return undefined;
-		obj = obj[segments[i]];
+	for (
+		let scope = context;
+		scope != null;
+		scope = scope.__parent
+	) {
+		if (Object.hasOwn(scope, firstSegment)) {
+			obj = scope[firstSegment];
+			break;
+		}
 	}
 
-	return typeof obj === "function"
-		? obj()
-		: obj;
+	if (typeof obj === "function") {
+		obj = obj();
+	}
+
+	if (obj == null || length === 1) {
+		return obj;
+	}
+
+	for (let i = 1; i < length; i++) {
+		obj = obj[segments[i]];
+
+		if (typeof obj === "function") {
+			obj = obj();
+		}
+
+		if (obj == null) {
+			return obj;
+		}
+	}
+
+	return obj;
 }
 
 /**
@@ -98,10 +166,22 @@ function evaluatePath(expr, context) {
  * @returns {*}
  */
 function evaluateCall(expr, context, evaluate, runtimeContext, event) {
-	const fn = context[expr.name];
+	let fn;
+	const name = expr.name;
+
+	for (
+		let scope = context;
+		scope != null;
+		scope = scope.__parent
+	) {
+		if (Object.hasOwn(scope, name)) {
+			fn = scope[name];
+			break;
+		}
+	}
 
 	if (typeof fn !== "function") {
-		throw new Error(`Unknown function: ${expr.name}`);
+		throw new Error(`Unknown function: ${name}`);
 	}
 
 	const args = expr.args;
@@ -173,7 +253,7 @@ function evaluateConditional(expr, evaluate, runtimeContext) {
 
 	if (typeof conditionValue !== "boolean") {
 		throw new Error(
-			`[Udodi] Conditional expression must resolve to boolean, got ${typeof conditionValue}`
+			`Conditional expression must resolve to boolean, got ${typeof conditionValue}`
 		);
 	}
 

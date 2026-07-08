@@ -1,11 +1,4 @@
 /**
- * Quote-aware scanner utilities.
- *
- * These helpers are intended as the foundation
- * for Udodi's lexer and directive parser.
- */
-
-/**
  * Scanner mode: split on delimiter.
  *
  * @type {number}
@@ -30,30 +23,10 @@ export function isQuote(ch) {
 }
 
 /**
- * Counts consecutive backslashes before an index
- * to determine if a character is escaped.
- *
- * @param {string} str - String to inspect.
- * @param {number} index - Position to check.
- * @returns {boolean} True if escaped.
- */
-export function isEscaped(str, index) {
-	let i = index;
-	let n = 0;
-
-	while (--i >= 0) {
-		if (str.charCodeAt(i) !== 92) break;
-		n++;
-	}
-
-	return (n & 1) === 1;
-}
-
-/**
  * Returns true if string is enclosed
  * by matching quotes.
  *
- * Examples:
+ * @examples
  *
  * "hello" or 'hello'
  *
@@ -76,7 +49,7 @@ export function isQuotedString(str) {
  * Removes surrounding quotes and
  * unescapes quoted content.
  *
- * Examples:
+ * @examples
  *
  * "'hello'" -> "hello"
  * "'it\\'s'" -> "it's"
@@ -85,12 +58,7 @@ export function isQuotedString(str) {
  * @returns {string}
  */
 export function unquoteString(str) {
-	if (!isQuotedString(str)) {
-		return str;
-	}
-
 	const len = str.length;
-
 	let result = "";
 
 	for (let i = 1; i < len - 1; i++) {
@@ -208,7 +176,7 @@ export function scanQuoted(str, onToken, mode, delimiter = null) {
  *
  * Empty tokens are preserved.
  *
- * Examples:
+ * @examples
  *
  * a:b:c
  * -> ["a","b","c"]
@@ -253,15 +221,15 @@ export function splitUnquoted(str, delimiter) {
  *   - =>
  * - Preserves quoted strings verbatim.
  *
- * Examples:
- *
- * - name : arg        --> name:arg
- * - user . profile    --> user.profile
- * - a  b   c          --> a b c
- * - a | upper         --> a|upper
- * - click = save      --> click=save
- * - a =>  b           --> a=>b
- * - "a : b"           --> "a : b"
+ * @examples
+ * 
+ * - name : arg        -> name:arg
+ * - user . profile    -> user.profile
+ * - a  b   c          -> a b c
+ * - a | upper         -> a|upper
+ * - click = save      -> click=save
+ * - a =>  b           -> a=>b
+ * - "a : b"           -> "a : b"
  *
  * @param {string} input Directive expression.
  * @returns {string} Normalized directive expression.
