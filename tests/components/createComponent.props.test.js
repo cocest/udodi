@@ -68,6 +68,33 @@ describe("createComponent methods", () => {
 
 		expect(root.textContent).toBe("Ada Lovelace");
 	});
+
+	it("keeps handlers flat on the internal context", async () => {
+		const Counter = createComponent({
+			state: {
+				count: 0,
+			},
+			methods: {
+				increment() {
+					this.count = this.count + 1;
+				},
+			},
+			template: () => `
+				<button>
+					<span @text="count"></span>
+				</button>
+			`,
+		});
+
+		const root = document.createElement("div");
+
+		const instance = render(Counter(), root);
+
+		instance.context.increment(new Event("click"));
+		await Promise.resolve();
+
+		expect(root.textContent.trim()).toBe("1");
+	});
 });
 
 describe("createComponent computed", () => {
@@ -125,32 +152,74 @@ describe("createComponent computed", () => {
 	});
 });
 
-describe("createComponent handlers", () => {
-	it("keeps handlers flat on the internal context", async () => {
-		const Counter = createComponent({
-			state: {
-				count: 0,
-			},
-			handlers: {
-				increment() {
-					this.count = this.count + 1;
+describe("createComponent validation errors", () => {
+	it("reacts to @validate errors rendered from ud.errors", async () => {
+		const Form = createComponent({
+			methods: {
+				between(value, min, max) {
+					if (value.length >= min && value.length <= max) {
+						return true;
+					}
+
+					return "Value is not within the specified range";
+				},
+				validName(value) {
+					return /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/.test(value)
+						? true
+						: "Invalid name format";
 				},
 			},
 			template: () => `
-				<button>
-					<span @text="count"></span>
-				</button>
+				<div>
+					<input @validate="between:2:100 validName" @error="message" type="text">
+					<div @text="ud.errors.message"></div>
+				</div>
 			`,
 		});
 
 		const root = document.createElement("div");
-
-		const instance = render(Counter(), root);
-
-		instance.context.increment(new Event("click"));
+		render(Form(), root);
 		await Promise.resolve();
 
-		expect(root.textContent.trim()).toBe("1");
+		expect(root.textContent).not.toContain("Value is not within the specified range");
+
+		const input = root.querySelector("input");
+		if (!input) {
+			throw new Error("Expected input element to exist");
+		}
+
+		input.value = "1";
+		input.dispatchEvent(new Event("input", { bubbles: true }));
+		await Promise.resolve();
+
+		expect(root.textContent).toContain("Value is not within the specified range");
+	});
+});
+
+describe("createComponent instance creation", () => {
+	it("supports creating multiple instances when state contains functions", () => {
+		const formatter = () => "ready";
+
+		const Example = createComponent({
+			state: {
+				label: "initial",
+				formatter,
+			},
+			template: () => `<p @text="label"></p>`,
+		});
+
+		const rootA = document.createElement("div");
+		const rootB = document.createElement("div");
+
+		expect(() => {
+			render(Example(), rootA);
+			render(Example(), rootB);
+		}).not.toThrow();
+
+		return Promise.resolve().then(() => {
+			expect(rootA.textContent).toContain("initial");
+			expect(rootB.textContent).toContain("initial");
+		});
 	});
 });
 

@@ -8,6 +8,7 @@ export { onAppRefresh, refreshApp } from "./runtime/refresh.js";
 
 export {
 	createSignal,
+	touch,
 	reactive,
 	computed,
 	effect,

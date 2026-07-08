@@ -41,7 +41,7 @@ export const TOKEN_COLON = 5;
 export const TOKEN_PIPE = 6;
 
 /**
- * Equal sign `=` used in bindings (e.g. `count = count + 1`)
+ * Equal sign `=` used in bindings (e.g. `href=link`, `value=42`)
  */
 export const TOKEN_EQUAL = 7;
 

@@ -58,7 +58,7 @@ function injectOverlayStyles() {
 /**
  * Ensure shared overlay root exists.
  */
-function ensureOverlayRoot() {
+export function ensureOverlayRoot() {
 	if (overlayRoot) {
 		return overlayRoot;
 	}
