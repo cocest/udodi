@@ -127,7 +127,7 @@ export function createSignal(initialValue) {
 	};
 
 	const trigger = () => {
-        if (subscribers.size === 0) {
+		if (subscribers.size === 0) {
             return;
         }
 
@@ -253,23 +253,29 @@ export function computed(fn, scope) {
 	let dispose = null;
 	let version = 0;
 
-	const [track, trigger] = createSignal(0);
+	// Internal signal used to track consumers of this computed.
+	const [track, setVersion] = createSignal(0);
 
 	const recompute = () => {
 		const nextValue = fn();
 
-		// Initial evaluation
+		// Initial evaluation.
 		if (!initialized) {
 			cachedValue = nextValue;
 			initialized = true;
 			return;
 		}
 
-		// Notify dependents only when the value changes
-		if (!Object.is(cachedValue, nextValue)) {
-			cachedValue = nextValue;
-			trigger(++version);
+		// Nothing changed.
+		if (Object.is(cachedValue, nextValue)) {
+			return;
 		}
+
+		// Update first so dependents always see the latest value.
+		cachedValue = nextValue;
+
+		// Notify consumers of this computed.
+		setVersion(++version);
 	};
 
 	const cleanupComputed = () => {
@@ -279,7 +285,6 @@ export function computed(fn, scope) {
 
 		dispose();
 		dispose = null;
-
 		initialized = false;
 		cachedValue = undefined;
 	};
@@ -290,16 +295,53 @@ export function computed(fn, scope) {
 
 	return function computedGetter() {
 		if (!dispose) {
-			// No scope forwarding here.
-			// We manage cleanup ourselves so the computed can be recreated.
+			// Lazily create the internal effect.
 			dispose = effect(recompute);
 		}
 
-		// Track consumers of this computed.
+		// Track whoever is consuming this computed.
 		track();
 
 		return cachedValue;
 	};
+}
+
+import {
+	reactiveArray,
+	reactiveMap,
+	reactiveSet
+} from "./collections";
+
+/**
+ * Wraps supported collections with reactive wrappers.
+ *
+ * @param {*} value
+ * @param {Object} owner
+ * @param {PropertyKey} key
+ * @returns {*}
+ */
+function wrapCollection(value, owner, key) {
+	if (
+		value == null ||
+		typeof value !== "object" ||
+		value.__udodi_reactive__ === true
+	) {
+		return value;
+	}
+
+	if (Array.isArray(value)) {
+		return reactiveArray(value, owner, key);
+	}
+
+	if (value instanceof Map) {
+		return reactiveMap(value, owner, key);
+	}
+
+	if (value instanceof Set) {
+		return reactiveSet(value, owner, key);
+	}
+
+	return value;
 }
 
 // Tuple indexes for readability + minification friendliness
@@ -394,37 +436,31 @@ export function reactive(initialState = {}, options = {}) {
 	/**
 	 * Property signal registry.
 	 *
-	 * @type {Map<PropertyKey, { getter: Function, setter: Function }>}
+	 * @type {Map<PropertyKey, {
+	 *   getter: Function,
+	 *   setter: Function
+	 * }>}
 	 */
 	const signals = new Map();
 
 	/**
-	 * Underlying target object used by the Proxy.
+	 * Underlying target object used by
+	 * the Proxy.
 	 *
-	 * Non-reactive properties are stored directly here.
+	 * Non-reactive properties are stored
+	 * directly here.
 	 *
 	 * @type {Object}
 	 */
 	const target = {};
 
-	// Initialize signals.
-	const keys = Object.keys(initialState);
-
-	for (let i = 0; i < keys.length; i++) {
-		const key = keys[i];
-		const value = initialState[key];
-
-		signals.set(key, createSignal(value));
-		target[key] = value;
-	}
-
 	const trigger = (key) => {
-        const signal = signals.get(key);
+		const signal = signals.get(key);
 
-        if (signal !== undefined) {
-            signal[SIGNAL_TRIGGER]();
-        }
-    };
+		if (signal !== undefined) {
+			signal[SIGNAL_TRIGGER]();
+		}
+	};
 
 	const proxy = new Proxy(target, {
 		get(target, prop) {
@@ -436,6 +472,8 @@ export function reactive(initialState = {}, options = {}) {
 		},
 
 		set(target, prop, value) {
+			value = wrapCollection(value, proxy, prop);
+
 			const signal = signals.get(prop);
 
 			if (signal !== undefined) {
@@ -444,17 +482,18 @@ export function reactive(initialState = {}, options = {}) {
 					value,
 					signal,
 					target,
-					interceptors
+					interceptors,
 				);
 			}
 
 			// Non-reactive property.
 			target[prop] = value;
+
 			return true;
 		},
 
 		has(target, prop) {
-			return prop in target || signals.has(prop);
+			return (prop in target || signals.has(prop));
 		},
 
 		ownKeys(target) {
@@ -476,13 +515,29 @@ export function reactive(initialState = {}, options = {}) {
 				};
 			}
 
-			return Reflect.getOwnPropertyDescriptor(target, prop);
+			return Reflect.getOwnPropertyDescriptor(
+				target,
+				prop,
+			);
 		},
 	});
 
+	// Initialize signals.
+	const keys = Object.keys(initialState);
+
+	for (let i = 0, length = keys.length; i < length; i++) {
+		const key = keys[i];
+
+		let value = initialState[key];
+		value = wrapCollection(value, proxy, key);
+
+		signals.set(key, createSignal(value));
+		target[key] = value;
+	}
+
 	reactiveTriggers.set(proxy, trigger);
 
-    return proxy;
+	return proxy;
 }
 
 /**
