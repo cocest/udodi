@@ -36,6 +36,64 @@ export const Counter = createComponent({
 		],
 	},
 
+	computed: {
+		computeTest(ctx) {
+			return ctx.count;
+		},
+
+		emailTouched(ctx) {
+			const form = ctx.ud.forms.parallelForm;
+
+			if (!form) {
+				return false;
+			}
+
+			const field = form.getField("email");
+
+			return field
+				? field.touched
+				: false;
+		},
+
+		emailDirty(ctx) {
+			const form = ctx.ud.forms.parallelForm;
+
+			if (!form) {
+				return false;
+			}
+
+			const field = form.getField("email");
+
+			return field
+				? field.dirty
+				: false;
+		},
+
+		emailValidating(ctx) {
+			const form = ctx.ud.forms.parallelForm;
+
+			if (!form) {
+				return false;
+			}
+
+			const field = form.getField("email");
+
+			return field
+				? field.validating
+				: false;
+		},
+
+		emailValue(ctx) {
+			const form = ctx.ud.forms.parallelForm;
+
+			if (!form) {
+				return "";
+			}
+
+			return form.getValue("email");
+		},
+	},
+
 	methods: {
 		uppercase(data) {
 			return data.toUpperCase();
@@ -87,11 +145,48 @@ export const Counter = createComponent({
 			return "This field is required";
 		},
 
-		email(value) {
+		email(value, validationContext) {
+			console.log(validationContext);
+
 			if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
 				return true;
 			}
 			return "Invalid email format";
+		},
+
+		async slowEmail(value) {
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+
+			if (value.endsWith("@example.com")) {
+				return true;
+			}
+
+			return "Only @example.com emails are allowed";
+		},
+
+		async uniqueName(value) {
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+
+			if (value.toLowerCase() !== "admin") {
+				return true;
+			}
+
+			return "This name is already taken";
+		},
+
+		async handleParallelSubmit(submitContext) {
+			console.log(
+				"Parallel submit:",
+				Object.fromEntries(
+					submitContext.formData
+				)
+			);
+
+			await new Promise((resolve) => setTimeout(resolve, 2000));
+
+			console.log(
+				"Finished submitting"
+			);
 		},
 
 		// Handlers here
@@ -111,8 +206,6 @@ export const Counter = createComponent({
 				name: "New User",
 				email: "new@example.com",
 			});
-
-			touch(this, "users");
 		},
 
 		removeFirstUser() {
@@ -121,19 +214,16 @@ export const Counter = createComponent({
 
 		reverseUsers() {
 			this.users.reverse();
-			touch(this, "users");
 		},
 
 		shuffleUsers() {
-			this.users = [...this.users].sort(() => Math.random() - 0.5);
+			this.users.sort(() => Math.random() - 0.5);
 		},
 
 		changeColor(event) {
 			this.btnColor = "secondcolor";
 			this.toogle = !this.toogle;
 		},
-
-
 	},
 
 	onMount(root, ctx) {
@@ -147,14 +237,16 @@ export const Counter = createComponent({
 	template: () => html`
 		<div>
 			<div @text="message|uppercase"></div>
-			<div @text="count" @ref="counter"></div>
-
+			<div @text="computeTest" @ref="counter"></div>
 			<button @on="click=increment:1">Click Me</button>
+
 			<button @on="click=changeColor" @class="'btntext' getBgColor">
 				Change Color
 			</button>
 
-			<div @class="classTest">Class Application</div>
+			<div @class="classTest">
+				Class Application
+			</div>
 
 			<div
 				@style="styleTest"
@@ -167,7 +259,13 @@ export const Counter = createComponent({
 
 			<h3>@show Tests</h3>
 
-			<div @show="isVisible">Udodi.js is awesome!</div>
+			<div @show="isVisible">
+				Udodi.js is awesome!
+			</div>
+
+			<hr>
+
+			<h3>@if Tests</h3>
 
 			<hr>
 
@@ -217,57 +315,104 @@ export const Counter = createComponent({
 
 			<hr>
 
-			<h3>@validate And @error Tests</h3>
-			<label>
-				User Name:
-				<input @validate="between:2:100 validName" @error="message" type="text">
-			</label>
-			<div @text="ud.errors.message"></div>
+			<h3>@validate Tests</h3>
+
+			<form @form="validationForm">
+				<label>
+					User Name:
+					<input
+						name="username"
+						type="text"
+						@validate="between:2:100 validName"
+						@trigger="live"
+					>
+				</label>
+
+				<div
+					@text="ud.forms.validationForm.errors.username"
+					@style="'color:red;'"
+				></div>
+
+				<div>
+					Valid:
+					<span @text="ud.forms.validationForm.valid"></span>
+				</div>
+			</form>
 
 			<hr>
 
-			<h3>@form, @submit, and @trigger Tests</h3>
+			<h3>@form, @validate and @submit Tests</h3>
 
 			<form @form="testForm" @submit="handleFormSubmit">
 				<div>
 					<label>
 						Email (live validation):
-						<input 
-							type="email" 
+
+						<input
+							type="email"
 							name="email"
-							@validate="required email" 
-							@error="email"
+							@validate="required email"
 							@trigger="live submit"
 							placeholder="Enter email"
 						>
 					</label>
-					<div @text="ud.errors.email" @style="'color: red;'"></div>
+
+					<div
+						@text="ud.forms.testForm.errors.email"
+						@style="'color:red;'"
+					></div>
 				</div>
 
 				<div>
 					<label>
 						Name (lazy validation):
-						<input 
-							type="text" 
+
+						<input
+							type="text"
 							name="name"
-							@validate="required validName" 
-							@error="name"
+							@validate="required validName"
 							@trigger="lazy"
 							placeholder="Enter your name"
 						>
 					</label>
-					<div @text="ud.errors.name" @style="'color: red;'"></div>
+
+					<div
+						@text="ud.forms.testForm.errors.name"
+						@style="'color:red;'"
+					></div>
 				</div>
 
-				<button type="submit">Submit Form</button>
+				<button type="submit">
+					Submit Form
+				</button>
 
-				<div @style="'margin-top: 10px; border: 1px solid #ccc; padding: 10px;'">
+				<div @style="'margin-top:10px; border:1px solid #ccc; padding:10px;'">
 					<h4>Form State:</h4>
-					<div>Valid: <strong @text="ud.forms.testForm.valid"></strong></div>
-					<div>Submitting: <strong @text="ud.forms.testForm.submitting"></strong></div>
-					<div>Submitted: <strong @text="ud.forms.testForm.submitted"></strong></div>
-					<div>Dirty: <strong @text="ud.forms.testForm.dirty"></strong></div>
-					<div>Touched: <strong @text="ud.forms.testForm.touched"></strong></div>
+
+					<div>
+						Valid:
+						<strong @text="ud.forms.testForm.valid"></strong>
+					</div>
+
+					<div>
+						Submitting:
+						<strong @text="ud.forms.testForm.submitting"></strong>
+					</div>
+
+					<div>
+						Submitted:
+						<strong @text="ud.forms.testForm.submitted"></strong>
+					</div>
+
+					<div>
+						Dirty:
+						<strong @text="ud.forms.testForm.dirty"></strong>
+					</div>
+
+					<div>
+						Touched:
+						<strong @text="ud.forms.testForm.touched"></strong>
+					</div>
 				</div>
 			</form>
 
@@ -296,6 +441,7 @@ export const Counter = createComponent({
 			<ul>
 				<li @for="user userIndex users" @key="user.id">
 					<strong @text="userIndex"></strong>
+
 					<span>. </span>
 
 					<span @text="user.name"></span>
@@ -317,6 +463,155 @@ export const Counter = createComponent({
 					<span @text="user.name"></span>
 				</li>
 			</ul>
+
+			<hr>
+
+			<h3>Sequential Validation Form</h3>
+
+			<form @form="sequentialForm sequential" @submit="handleFormSubmit">
+				<div>
+					<input
+						name="name"
+						placeholder="Name"
+						@validate="required validName"
+						@trigger="submit"
+					>
+
+					<div @text="ud.forms.sequentialForm.errors.name" @style="'color:red;'"></div>
+				</div>
+
+				<div>
+					<input
+						name="email"
+						placeholder="Email"
+						@validate="required email"
+						@trigger="submit"
+					>
+
+					<div @text="ud.forms.sequentialForm.errors.email" @style="'color:red;'"></div>
+				</div>
+
+				<button type="submit">
+					Submit Sequential
+				</button>
+
+				<div>
+					Valid:
+					<span @text="ud.forms.sequentialForm.valid"></span>
+				</div>
+
+				<div>
+					Validating:
+					<span @text="ud.forms.sequentialForm.validating"></span>
+				</div>
+
+				<div>
+					Submitting:
+					<span @text="ud.forms.sequentialForm.submitting"></span>
+				</div>
+
+				<div>
+					Submitted:
+					<span @text="ud.forms.sequentialForm.submitted"></span>
+				</div>
+
+				<div>
+					Name Error:
+					<span @text="ud.forms.sequentialForm.errors.name"></span>
+				</div>
+
+				<div>
+					Email Error:
+					<span @text="ud.forms.sequentialForm.errors.email"></span>
+				</div>
+			</form>
+
+			<hr>
+
+			<h3>Parallel Validation Form</h3>
+
+			<form @form="parallelForm parallel" @submit="handleParallelSubmit">
+				<div>
+					<input
+						name="email"
+						placeholder="Email"
+						@validate="required email slowEmail"
+						@trigger="submit"
+					>
+
+					<div @text="ud.forms.parallelForm.errors.email" @style="'color:red;'"></div>
+				</div>
+
+				<div>
+					<input
+						name="username"
+						placeholder="Username"
+						@validate="required uniqueName"
+						@trigger="submit"
+					>
+
+					<div @text="ud.forms.parallelForm.errors.username" @style="'color:red;'"></div>
+				</div>
+
+				<button type="submit">
+					Submit Parallel
+				</button>
+
+				<div>
+					Valid:
+					<span @text="ud.forms.parallelForm.valid"></span>
+				</div>
+
+				<div>
+					Validating:
+					<span @text="ud.forms.parallelForm.validating"></span>
+				</div>
+
+				<div>
+					Submitting:
+					<span @text="ud.forms.parallelForm.submitting"></span>
+				</div>
+
+				<div>
+					Submitted:
+					<span @text="ud.forms.parallelForm.submitted"></span>
+				</div>
+
+				<div>
+					Validation Mode:
+					<span @text="ud.forms.parallelForm.validationMode"></span>
+				</div>
+
+				<div>
+					Email Error:
+					<span @text="ud.forms.parallelForm.errors.email"></span>
+				</div>
+
+				<div>
+					Username Error:
+					<span @text="ud.forms.parallelForm.errors.username"></span>
+				</div>
+			</form>
+
+			<div>
+				Email Touched:
+				<span @text="emailTouched"></span>
+			</div>
+
+			<div>
+				Email Dirty:
+				<span @text="emailDirty"></span>
+			</div>
+
+			<div>
+				Email Validating:
+				<span @text="emailValidating"></span>
+			</div>
+
+			<div>
+				Email Value:
+				<span @text="emailValue"></span>
+			</div>
 		</div>
 	`,
 });

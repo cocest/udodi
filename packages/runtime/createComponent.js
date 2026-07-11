@@ -210,9 +210,6 @@ export function createComponent({
 			writable: false,
 		});
 
-		// Create a readonly membrane for the user-defined namespace (ud)
-		const publicUd = readonly(stateStore.ud);
-
 		// Target container for the mount-injected cleanup hook
 		let injectedCleanupFn = null;
 
@@ -221,7 +218,12 @@ export function createComponent({
 			get(target, prop) {
 				if (prop === "_state") return target._state;
 				if (prop === "refs") return target.refs;
-				if (prop === "ud") return publicUd;
+
+				// readonly membrane for the user-defined namespace (ud)
+				if (prop === "ud") {
+					return readonly(target.ud);
+				}
+
 				if (prop === "name") return compName;
 				if (prop === "cleanup") return injectedCleanupFn;
 
