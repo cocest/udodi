@@ -1,4 +1,4 @@
-import {
+﻿import {
 	createSignal, 
 	effect, 
 	touch
@@ -1357,119 +1357,253 @@ function processAttrDirective(nodes, vm, context, scope) {
 }
 
 /**
- * Writes a validation error into the framework-owned `ud.errors` namespace.
- *
- * Missing intermediate objects are created automatically. After the update,
- * the reserved `ud` reactive root is touched so any effects depending on
- * `ud.errors.*` are re-evaluated.
- *
- * This function is intended for internal runtime use only.
- *
- * @param {Object} context - The component runtime context.
- * @param {string[]} segments - Path segments under `ud.errors`.
- * For example:
- *   ["email"]            -> ud.errors.email 
- *   ["user", "email"]    -> ud.errors.user.email
- * @param {string} message - Validation error message. An empty string clears
- * the error while preserving the property.
- * @returns {boolean} `true` if the write succeeded; otherwise `false`.
+ * @typedef {Object} FormFieldState
+ * @property {HTMLElement} element - Form control element.
+ * @property {boolean} valid - Whether the field currently passes validation.
+ * @property {boolean} validating - Whether the field is currently being validated.
+ * @property {boolean} touched - Whether the field has been interacted with.
+ * @property {boolean} dirty - Whether the field value differs from its initial value.
+ * @property {*} initialValue - Initial value captured during registration.
+ * @property {string} [name] - Field name.
+ * @property {string} [error] - Current validation error message.
  */
-function setUdError(context, segments, message) {
-    try {
-        let current = context.ud.errors;
-		const last = segments.length - 1;
 
-		for (let i = 0; i < last; i++) {
-            const key = segments[i];
-            let next = current[key];
-
-			// Create missing intermediate objects.
-            if (next == null || typeof next !== "object") {
-                next = Object.create(null);
-                current[key] = next;
-            }
-
-            current = next;
-        }
-
-        current[segments[last]] = message;
-
-        // Notify the root reactive property after a deep mutation.
-        touch(context, "ud");
-
-        return true;
-
-    } catch {
-        return false;
-    }
-}
+/**
+ * @typedef {Object} FormController
+ * @property {boolean} valid - Whether the form is currently valid.
+ * @property {boolean} validating - Whether one or more validations are running.
+ * @property {boolean} dirty - Whether one or more fields are dirty.
+ * @property {boolean} touched - Whether one or more fields have been touched.
+ * @property {boolean} submitting - Whether the form submit handler is executing.
+ * @property {boolean} submitted - Whether the form has been successfully submitted.
+ * @property {"sequential"|"parallel"} validationMode - Form validation strategy.
+ * @property {(options?: {clearForm?: boolean}) => void} reset
+ * Resets the form controller and optionally clears the form.
+ * @property {(name: string, options?: {clearField?: boolean}) => boolean} resetField
+ * Resets a specific field and optionally clears its value.
+ * @property {(name: string, value: any) => boolean} setValue
+ * Sets the value of a field.
+ * @property {(name: string) => any} getValue
+ * Returns the current value of a field.
+ * @property {(name: string) => FormFieldState|FormFieldState[]|undefined} getField
+ * Returns the state of a field or field group.
+ */
 
 /**
  * @typedef {Object} FormValidationState
- * @property {Object} controller
- * @property {boolean} controller.valid
- * @property {boolean} controller.dirty
- * @property {boolean} controller.touched
- * @property {boolean} controller.submitting
- * @property {boolean} controller.submitted
- * @property {Function} controller.reset
- * @property {Function} controller.resetField
- * @property {Function} controller.setValue
- * @property {Function} controller.getField
+ * @property {"sequential"|"parallel"} validationMode
+ * Validation strategy used by the form.
+ * @property {number} pendingValidations
+ * Number of validations currently in progress.
+ * @property {FormController} controller
+ * Reactive form controller exposed through `context.ud.forms`.
  * @property {Array<{validate: Function, element: HTMLElement}>} validators
- * @property {Array<{element: HTMLElement, touched: boolean, dirty: boolean, initialValue: any, name?: string}>} fields
+ * Registered field validators.
+ * @property {FormFieldState[]} fields
+ * Registered field states.
+ * @property {Object<string, FormFieldState|FormFieldState[]>} fieldsByName
+ * Lookup table of fields by name.
+ * @property {WeakSet<HTMLElement>} registered
+ * Tracks already-registered form controls.
  */
 
 /**
  * Registry for form validation state and metadata.
+ *
+ * Maps each `<form>` element to its internal validation state.
  *
  * @type {WeakMap<HTMLFormElement, FormValidationState>}
  */
 const formValidators = new WeakMap();
 
 /**
+ * Recalculates the validity of a form entry from its current
+ * error collection.
+ *
+ * A form is considered valid when all error messages are empty strings.
+ *
+ * @param {Object|undefined} entry
+ * Form entry created by `@form`.
+ *
+ * @returns {boolean}
+ * Returns `true` if `controller.valid` changed; otherwise `false`.
+ */
+function updateFormValidity(entry) {
+	if (entry === undefined) {
+		return false;
+	}
+
+	const controller = entry.controller;
+	const errors = controller.errors;
+
+	let valid = true;
+
+	for (const key in errors) {
+		if (errors[key] !== "") {
+			valid = false;
+			break;
+		}
+	}
+
+	if (controller.valid === valid) {
+		return false;
+	}
+
+	controller.valid = valid;
+
+	return true;
+}
+
+/**
  * Processes `@validate` directives.
  *
- * Validation executes immediately after mounting and subsequently whenever
- * the associated form control changes.
+ * Registers field-level validators with the nearest parent `@form`
+ * controller and manages the reactive validation state for both individual
+ * fields and the form as a whole.
+ *
+ * Validation is not executed on mount. Validators run only after user
+ * interaction according to the configured validation trigger:
+ *
+ * - `live`   – validates on input/change events.
+ * - `lazy`   – validates on blur events.
+ * - `submit` – validates only when the parent form is submitted.
+ *
+ * When no `@trigger` directive is present, `live` validation is used by
+ * default.
  *
  * The directive accepts one or more validator expressions separated by
  * whitespace.
  *
  * Examples:
  *
- *   @validate="required"
- *   @validate="required email"
- *   @validate="required min:8"
- *   @validate="between:5:10"
+ *   `@validate="required"`
+ *   `@validate="required email"`
+ *   `@validate="required min:8"`
+ *   `@validate="between:5:10"`
  *
  * Each validator expression must resolve to a function defined on the
  * component context (typically under `methods`). Validator names are
  * flattened into the component context and therefore must be single
  * identifiers.
  *
- * Supported validator signatures:
+ * Validators may be synchronous or asynchronous and may return a Promise.
  *
- *   required(value)
- *   email(value)
- *   min(value, limit)
- *   between(value, min, max)
+ * Validator signature:
+ *
+ *   validator(value, ...args, validationContext)
+ *
+ * Examples:
+ *
+ *   required(value, validationContext)
+ *   email(value, validationContext)
+ *   min(value, limit, validationContext)
+ *   between(value, min, max, validationContext)
+ *
+ * The `validationContext` object contains information about the current
+ * validation cycle:
+ *
+ * {
+ *     trigger,    // "live" | "lazy" | "submit" | "manual"
+ *     element,    // HTML form control being validated
+ *     field,      // Internal field state or null
+ *     form,       // Parent HTMLFormElement or null
+ *     controller  // Parent form controller or undefined
+ * }
+ *
+ * This allows validators to vary their behavior depending on the source
+ * of validation:
+ *
+ *   required(value, ctx) {
+ *       if (
+ *           ctx.trigger === "submit" &&
+ *           value.trim() === ""
+ *       ) {
+ *           return "This field is required";
+ *       }
+ *
+ *       return true;
+ *   }
  *
  * Validator return values:
  *
  *   - `true` when validation succeeds.
- *   - A string containing the validation error when validation fails.
+ *   - A non-empty string containing the validation error message when
+ *     validation fails.
  *
- * Validation stops at the first failing validator.
+ * Validation stops at the first failing validator and the resulting error
+ * message is stored on the parent form controller:
  *
- * When an accompanying `@error` directive is present, the resulting error
- * message is written into the framework-owned `ud.errors` namespace.
+ *   `ud.forms.<formName>.errors.<fieldName>`
  *
- * @param {HTMLElement[]} nodes - Elements containing an active
- * `@validate` directive.
- * @param {Object} vm - Virtual machine instance.
- * @param {Object} context - Runtime evaluation context.
- * @param {Object} scope - Active effect scope.
+ * Example:
+ *
+ *   `ud.forms.login.errors.email`
+ *
+ * Each validated field maintains the following reactive state:
+ *
+ * {
+ *     element,
+ *     name,
+ *     touched,
+ *     dirty,
+ *     validating,
+ *     initialValue
+ * }
+ *
+ * The parent form controller exposes:
+ *
+ * {
+ *     valid,
+ *     validating,
+ *     dirty,
+ *     touched,
+ *     submitting,
+ *     submitted,
+ *     validationMode,
+ *     errors
+ * }
+ *
+ * Example controller shape:
+ *
+ * {
+ *     valid: true,
+ *     validating: false,
+ *     dirty: false,
+ *     touched: false,
+ *     submitting: false,
+ *     submitted: false,
+ *     validationMode: "sequential",
+ *     errors: {
+ *         email: "",
+ *         password: ""
+ *     }
+ * }
+ *
+ * Validation state is coordinated using a per-form pending validation
+ * counter, allowing multiple asynchronous validators to run concurrently
+ * while accurately maintaining `controller.validating`.
+ *
+ * Form validation behavior depends on the parent `@form` validation mode:
+ *
+ * - `sequential`
+ *   Validators execute one at a time and stop on the first failure.
+ *
+ * - `parallel`
+ *   Validators execute concurrently and all validations are allowed to
+ *   complete before the final form validity is determined.
+ *
+ * Validators registered by this directive are consumed automatically by
+ * `@submit`.
+ *
+ * @param {HTMLElement[]} nodes
+ * Elements containing an active `@validate` directive.
+ * @param {Object} vm
+ * Virtual machine instance.
+ * @param {Object} context
+ * Runtime evaluation context.
+ * @param {Object} scope
+ * Active effect scope.
+ * @returns {void}
  */
 function processValidateDirective(nodes, vm, context, scope) {
     const cleanups = scope.cleanups;
@@ -1496,25 +1630,6 @@ function processValidateDirective(nodes, vm, context, scope) {
 
             const instructions = getOrCompileInstructions(directive);
             const instructionsLength = instructions.length;
-
-            let errorSegments = null;
-			const errorExpr = elem.getAttribute("@error")?.trim() || "";
-
-			if (errorExpr !== "") {
-				const [instruction] = getOrCompileInstructions(
-					"error=" + normalizeDirective(errorExpr)
-				);
-
-				if (instruction.expr.type !== EXPR_PATH) {
-					console.warn(
-						`[@validate] Invalid @error binding "${errorExpr}". ` +
-						"Expected a path expression."
-					);
-
-				} else {
-					errorSegments = instruction.expr.segments;
-				}
-			}
 
 			const triggerExpr = elem.getAttribute("@trigger")?.trim() || null;
 
@@ -1549,6 +1664,57 @@ function processValidateDirective(nodes, vm, context, scope) {
 				}
 			}
 
+			/**
+			 * Marks a validation cycle as started.
+			 *
+			 * Sets the current field's `validating` state (when applicable),
+			 * increments the form's pending validation counter, and updates the
+			 * form controller's `validating` flag when transitioning from zero
+			 * active validations.
+			 *
+			 * This helper is safe for both sequential and parallel validation
+			 * modes and supports overlapping asynchronous validations.
+			 *
+			 * @returns {void}
+			 */
+			const beginValidation = () => {
+				if (fieldState !== null) {
+					fieldState.validating = true;
+				}
+
+				if (entry !== undefined && entry.pendingValidations++ === 0) {
+					entry.controller.validating = true;
+				}
+
+				touch(contextOwner, "ud");
+			};
+
+			/**
+			 * Marks a validation cycle as completed.
+			 *
+			 * Clears the current field's `validating` state (when applicable),
+			 * decrements the form's pending validation counter, and updates the
+			 * form controller's `validating` flag once all active validations
+			 * have finished.
+			 *
+			 * The pending validation count is clamped to zero to guard against
+			 * mismatched begin/end calls.
+			 *
+			 * @returns {void}
+			 */
+			const endValidation = () => {
+				if (fieldState !== null) {
+					fieldState.validating = false;
+				}
+
+				if (entry !== undefined && --entry.pendingValidations <= 0) {
+					entry.pendingValidations = 0;
+					entry.controller.validating = false;
+				}
+
+				touch(contextOwner, "ud");
+			};
+
             const type = elem.type;
             const tagName = elem.tagName;
 			const changeEvent =
@@ -1560,7 +1726,88 @@ function processValidateDirective(nodes, vm, context, scope) {
 
 			const DEFAULT_VAL_ERROR = "Validation failed";
 
-            const validate = async () => {
+			/**
+			 * Invokes a validator using the signature:
+			 *
+			 * validator(value, ...args, validationContext)
+			 *
+			 * @param {Function} validator
+			 * @param {*} value
+			 * @param {Array|undefined} args
+			 * @param {Object} validationContext
+			 * @returns {*}
+			 */
+			const invokeValidator = (
+				validator,
+				value,
+				args,
+				validationContext,
+			) => {
+				if (args === undefined || args.length === 0) {
+					return validator(value, validationContext);
+				}
+
+				switch (args.length) {
+					case 1:
+						return validator(
+							value,
+							args[0],
+							validationContext,
+						);
+
+					case 2:
+						return validator(
+							value,
+							args[0],
+							args[1],
+							validationContext,
+						);
+
+					case 3:
+						return validator(
+							value,
+							args[0],
+							args[1],
+							args[2],
+							validationContext,
+						);
+
+					default:
+						return validator(
+							value,
+							...args,
+							validationContext,
+						);
+				}
+			};
+
+			const setFieldError = (name, message) => {
+				if (entry === undefined || !name) {
+					return;
+				}
+
+				const errors = entry.controller.errors;
+
+				if (errors[name] !== message) {
+					entry.controller.setError(name, message);
+				}
+			};
+
+			const clearFieldError = (name) => {
+				if (entry === undefined || !name) {
+					return;
+				}
+
+				const errors = entry.controller.errors;
+
+				if (errors[name] !== "") {
+					entry.controller.resetError(name);
+				}
+			};
+
+            const validate = async (triggerType = "live", event = null) => {
+				beginValidation();
+
 				try {
 					// Ignore inactive radio buttons.
 					if (type === "radio" && !elem.checked) {
@@ -1651,30 +1898,18 @@ function processValidateDirective(nodes, vm, context, scope) {
 							break;
 						}
 
-						let result;
+						const validationContext = {
+							trigger: triggerType,
+							element: elem,
+							event,
+						};
 
-						if (args === undefined) {
-							result = validator(value);
-
-						} else {
-							switch (args.length) {
-								case 1:
-									result = validator(value, args[0]);
-									break;
-
-								case 2:
-									result = validator(value, args[0], args[1]);
-									break;
-
-								case 3:
-									result = validator(value, args[0], args[1], args[2]);
-									break;
-
-								default:
-									result = validator(value, ...args);
-									break;
-							}
-						}
+						let result = invokeValidator(
+							validator,
+							value,
+							args,
+							validationContext,
+						);
 
 						if (result instanceof Promise) {
 							result = await result;
@@ -1692,8 +1927,12 @@ function processValidateDirective(nodes, vm, context, scope) {
 						}
 					}
 
-					if (errorSegments !== null) {
-						setUdError(contextOwner, errorSegments, error);
+					if (fieldState !== null && fieldState.name) {
+						if (error === "") {
+							clearFieldError(fieldState.name);
+						} else {
+							setFieldError(fieldState.name, error);
+						}
 					}
 
 					return error === "";
@@ -1703,15 +1942,14 @@ function processValidateDirective(nodes, vm, context, scope) {
 						`[@validate] Error evaluating "${expr}":`, err
 					);
 
-					if (errorSegments !== null) {
-						setUdError(
-							contextOwner,
-							errorSegments,
-							DEFAULT_VAL_ERROR
-						);
+					if (fieldState !== null && fieldState.name) {
+						setFieldError(fieldState.name, DEFAULT_VAL_ERROR);
 					}
 
 					return false;
+
+				} finally {
+					endValidation();
 				}
 			};
 
@@ -1732,13 +1970,14 @@ function processValidateDirective(nodes, vm, context, scope) {
 			const fieldState = entry !== undefined ? {
 				element: elem,
                 name: elem.name ? elem.name.trim() : "",
+				validating: false,
                 touched: false,
                 dirty: false,
                 initialValue: getCurrentValue(),
             } : null;
 
             const updateFormState = () => {
-                if (entry === undefined) return;
+                if (entry === undefined) return false;
 
                 const controller = entry.controller;
                 let formTouched = false;
@@ -1760,14 +1999,16 @@ function processValidateDirective(nodes, vm, context, scope) {
                     }
                 }
 
-                if (
-                    controller.touched !== formTouched ||
-                    controller.dirty !== formDirty
-                ) {
-                    controller.touched = formTouched;
-                    controller.dirty = formDirty;
-                    touch(contextOwner, "ud");
-                }
+                const changed =
+					controller.touched !== formTouched ||
+					controller.dirty !== formDirty;
+
+				if (changed) {
+					controller.touched = formTouched;
+					controller.dirty = formDirty;
+				}
+
+				return changed;
             };
 
             const registerFieldState = () => {
@@ -1782,6 +2023,11 @@ function processValidateDirective(nodes, vm, context, scope) {
                 if (!name) {
                     return;
                 }
+
+				const errors = entry.controller.errors;
+				if (!(name in errors)) {
+					errors[name] = "";
+				}
 
                 const existing = entry.fieldsByName[name];
 
@@ -1799,54 +2045,75 @@ function processValidateDirective(nodes, vm, context, scope) {
             };
 
             const unregisterFieldState = () => {
-                if (entry === undefined || fieldState === null) return;
+				if (entry === undefined || fieldState === null) {
+					return;
+				}
 
-                const index = entry.fields.indexOf(fieldState);
-                if (index !== -1) {
-                    entry.fields.splice(index, 1);
-					entry.registered.delete(fieldState);
-                }
+				entry.registered.delete(fieldState);
 
-                const name = fieldState.name;
-                if (!name) {
-                    return;
-                }
+				const fields = entry.fields;
+				const index = fields.indexOf(fieldState);
 
-                const existing = entry.fieldsByName[name];
-                if (existing === undefined) {
-                    return;
-                }
+				if (index !== -1) {
+					fields.splice(index, 1);
+				}
 
-                if (Array.isArray(existing)) {
-                    const idx = existing.indexOf(fieldState);
-                    if (idx !== -1) {
-                        existing.splice(idx, 1);
-                    }
+				const name = fieldState.name;
 
-                    if (existing.length === 1) {
-                        entry.fieldsByName[name] = existing[0];
+				if (!name) {
+					return;
+				}
 
-                    } else if (existing.length === 0) {
-                        delete entry.fieldsByName[name];
-                    }
+				const fieldsByName = entry.fieldsByName;
+				const existing = fieldsByName[name];
 
-                } else if (existing === fieldState) {
-                    delete entry.fieldsByName[name];
-                }
-            };
+				if (existing === undefined) {
+					return;
+				}
+
+				if (Array.isArray(existing)) {
+					const idx = existing.indexOf(fieldState);
+
+					if (idx !== -1) {
+						existing.splice(idx, 1);
+					}
+
+					if (existing.length === 1) {
+						fieldsByName[name] = existing[0];
+
+					} else if (existing.length === 0) {
+						delete fieldsByName[name];
+					}
+
+				} else if (existing === fieldState) {
+					delete fieldsByName[name];
+				}
+
+				// Remove the error only when no fields remain with this name.
+				if (fieldsByName[name] === undefined) {
+					delete entry.controller.errors[name];
+
+					if (updateFormValidity(entry)) {
+						touch(contextOwner, "ud");
+					}
+				}
+			};
 
             if (fieldState !== null) {
                 registerFieldState();
             }
 
             if (entry !== undefined) {
-                updateFormState();
+                if (updateFormState()) {
+					touch(contextOwner, "ud");
+				}
             }
 
             const handleFocus = () => {
-                if (fieldState !== null && !fieldState.touched) {
+				if (fieldState !== null && !fieldState.touched) {
                     fieldState.touched = true;
                     updateFormState();
+					touch(contextOwner, "ud");
                 }
             };
 
@@ -1858,32 +2125,42 @@ function processValidateDirective(nodes, vm, context, scope) {
                 if (currentValue !== fieldState.initialValue && !fieldState.dirty) {
                     fieldState.dirty = true;
                     updateFormState();
+					touch(contextOwner, "ud");
 
                 } else if (currentValue === fieldState.initialValue && fieldState.dirty) {
                     fieldState.dirty = false;
                     updateFormState();
+					touch(contextOwner, "ud");
                 }
             };
 
             // Run validation and ignore any errors (they are handled internally).
-			const runValidate = () => {
-				validate().catch(() => {});
+			const runValidate = (triggerType, event) => {
+				validate(triggerType, event).catch(() => {});
 			};
 
 			elem.addEventListener("focus", handleFocus);
 			elem.addEventListener(changeEvent, handleChange);
 
 			if (triggerLive) {
-				elem.addEventListener(changeEvent, runValidate);
+				const handleLiveValidate = (event) => {
+					runValidate("live", event);
+				};
+
+				elem.addEventListener(changeEvent, handleLiveValidate);
 				cleanupLive = () => {
-					elem.removeEventListener(changeEvent, runValidate);
+					elem.removeEventListener(changeEvent, handleLiveValidate);
 				};
 			}
 
 			if (triggerLazy) {
-				elem.addEventListener("blur", runValidate);
+				const handleLazyValidate = (event) => {
+					runValidate("lazy", event);
+				};
+
+				elem.addEventListener("blur", handleLazyValidate);
 				cleanupLazy = () => {
-					elem.removeEventListener("blur", runValidate);
+					elem.removeEventListener("blur", handleLazyValidate);
 				};
 			}
 
@@ -1893,14 +2170,14 @@ function processValidateDirective(nodes, vm, context, scope) {
 						"[@trigger] submit requires the element to be inside a <form> with @form."
 					);
 				} else {
-					const entry = formValidators.get(form);
+					const submitEntry = formValidators.get(form);
 
-					if (entry === undefined) {
+					if (submitEntry === undefined) {
 						console.warn(
 							"[@trigger] submit requires the parent <form> to have an @form directive."
 						);
 					} else {
-						const validators = entry.validators;
+						const validators = submitEntry.validators;
 
 						validators.push({
 							element: elem,
@@ -1934,12 +2211,13 @@ function processValidateDirective(nodes, vm, context, scope) {
 
 				if (fieldState !== null) {
 					unregisterFieldState();
-					updateFormState();
+					if (updateFormState()) {
+						touch(contextOwner, "ud");
+					}
 				}
 			});
 
             elem.removeAttribute("@validate");
-            if (errorExpr !== "") elem.removeAttribute("@error");
 			if (triggerExpr !== null) elem.removeAttribute("@trigger");
 
         } catch (err) {
@@ -1951,35 +2229,111 @@ function processValidateDirective(nodes, vm, context, scope) {
 /**
  * Processes `@form` directives.
  *
- * Registers a form controller under `context.ud.forms` and creates the
- * internal validator registry used by `@validate` and `@submit`.
+ * Registers a reactive form controller under `context.ud.forms` and creates
+ * the internal form registry consumed by `@validate` and `@submit`.
  *
- * Example:
+ * The directive supports an optional validation mode:
  *
- * <form @form="login">
+ *   @form="login"
+ *   @form="login sequential"
+ *   @form="login parallel"
+ *
+ * Validation modes:
+ *
+ * - `sequential` (default):
+ *   Validators execute one at a time and validation stops on the first
+ *   failure.
+ *
+ * - `parallel`:
+ *   All validators execute concurrently and the form waits for all
+ *   validations to complete before determining validity.
  *
  * Creates:
  *
  * context.ud.forms.login = {
  *     valid: true,
+ *     validating: false,
  *     dirty: false,
  *     touched: false,
  *     submitting: false,
- *     submitted: false
+ *     submitted: false,
+ *     validationMode: "sequential",
+ *
+ *     errors: {
+ *         email: "",
+ *         password: ""
+ *     },
+ *
+ *     reset(options?),
+ *     getField(name),
+ *     getValue(name),
+ *     setValue(name, value),
+ *     resetField(name, options?),
+ *     setError(name, message),
+ *     resetError(name)
  * };
  *
- * Internally:
+ * The `errors` object is reactive and acts as the single source of truth for
+ * form validation errors:
+ *
+ *   ud.forms.login.errors.email
+ *   ud.forms.login.errors.password
+ *
+ * A form is considered valid when all values in `errors` are empty strings.
+ *
+ * Each field returned by `getField()` includes:
+ *
+ * {
+ *     element,
+ *     value,
+ *     touched,
+ *     dirty,
+ *     validating,
+ *     initialValue,
+ *     name,
+ *     type
+ * }
+ *
+ * `getField(name)` returns:
+ *
+ * - `undefined` when no matching field exists.
+ * - A single field state object when one field matches.
+ * - An array of field state objects for grouped inputs such as radio buttons
+ *   and checkboxes.
+ *
+ * Internally, a form entry is created:
  *
  * formValidators.set(form, {
+ *     validationMode,
+ *     pendingValidations: 0,
  *     controller,
  *     validators: [],
- *     fields: []
+ *     fields: [],
+ *     fieldsByName: Object.create(null),
+ *     registered: WeakSet
  * });
  *
- * @param {HTMLFormElement[]} nodes - Elements containing `@form`.
- * @param {Object} vm - Virtual machine instance.
- * @param {Object} context - Runtime evaluation context.
- * @param {Object} scope - Reactive effect scope.
+ * The controller and field states are reactive and can be consumed by
+ * directives and expressions, for example:
+ *
+ *   @show="ud.forms.login.valid"
+ *   @show="ud.forms.login.validating"
+ *   @show="ud.forms.login.errors.email"
+ *   @text="ud.forms.login.errors.email"
+ *   @text="ud.forms.login.getField('email').dirty"
+ *
+ * Form registration automatically creates `context.ud.forms` when it does
+ * not already exist.
+ *
+ * @param {HTMLFormElement[]} nodes
+ * Form elements containing an active `@form` directive.
+ * @param {Object} vm
+ * Virtual machine instance.
+ * @param {Object} context
+ * Runtime evaluation context.
+ * @param {Object} scope
+ * Active reactive scope used for cleanup registration.
+ * @returns {void}
  */
 function processFormDirective(nodes, vm, context, scope) {
     const cleanups = scope.cleanups;
@@ -1992,11 +2346,9 @@ function processFormDirective(nodes, vm, context, scope) {
 
     for (let i = 0, nodesLength = nodes.length; i < nodesLength; i++) {
         const elem = nodes[i];
-        const expr = elem.getAttribute("@form");
+        const expr = elem.getAttribute("@form").trim();
 
-        if (!expr) {
-            continue;
-        }
+        if (!expr) continue;
 
         try {
             if (elem.tagName !== "FORM") {
@@ -2014,30 +2366,68 @@ function processFormDirective(nodes, vm, context, scope) {
                 continue;
             }
 
-            const key = normalizeDirective(expr);
+            const tokens = normalizeDirective(expr).split(" ");
 
-            if (key === "") {
-                console.warn(
-                    "[@form] Form identifier cannot be empty."
-                );
+			if (tokens.length === 0 || tokens.length > 2) {
+				console.warn(`[@form] Invalid directive "${expr}".`);
+				continue;
+			}
+
+			const key = tokens[0];
+
+			if (key === "") {
+				console.warn(
+					"[@form] Form identifier cannot be empty."
+				);
+				continue;
+			}
+
+			if (forms[key] !== undefined) {
+                console.warn(`[@form] Duplicate form "${key}".`);
                 continue;
             }
 
-            if (forms[key] !== undefined) {
-                console.warn(
-                    `[@form] Duplicate form "${key}".`
-                );
-                continue;
-            }
+			const validationMode = tokens[1] === undefined
+				? "sequential"
+				: tokens[1];
+
+            if (
+				validationMode !== "sequential" &&
+				validationMode !== "parallel"
+			) {
+				console.warn(`[@form] Unknown validation mode "${validationMode}".`);
+				continue;
+			}
 
             const entry = {
+				validationMode,
+
                 controller: {
                     valid: true,
+					validating: false,
                     dirty: false,
                     touched: false,
                     submitting: false,
                     submitted: false,
+
+					/**
+					 * Field validation errors keyed by field name.
+					 *
+					 * Example:
+					 * {
+					 *   email: "Email is required.",
+					 *   password: "Password is too short."
+					 * }
+					 */
+					errors: Object.create(null),
+
+					get validationMode() {
+						return entry.validationMode;
+					},
                 },
+
+				wasReset: false,
+				pendingValidations: 0,
                 validators: [],
                 fields: [],
                 fieldsByName: Object.create(null),
@@ -2064,6 +2454,7 @@ function processFormDirective(nodes, vm, context, scope) {
             const normalizeField = (fieldState) => ({
                 element: fieldState.element,
                 value: getFieldValue(fieldState.element),
+				validating: fieldState.validating,
                 touched: fieldState.touched,
                 dirty: fieldState.dirty,
                 initialValue: fieldState.initialValue,
@@ -2112,25 +2503,37 @@ function processFormDirective(nodes, vm, context, scope) {
             };
 
             entry.controller.reset = ({ clearForm = true } = {}) => {
-                if (clearForm && typeof elem.reset === "function") {
-                    elem.reset();
-                }
+				if (clearForm && typeof elem.reset === "function") {
+					elem.reset();
+				}
 
-                entry.controller.valid = true;
-                entry.controller.dirty = false;
-                entry.controller.touched = false;
-                entry.controller.submitting = false;
-                entry.controller.submitted = false;
+				const controller = entry.controller;
+				controller.valid = true;
+				controller.dirty = false;
+				controller.touched = false;
+				controller.submitting = false;
+				controller.submitted = false;
+				controller.validating = false;
 
-                for (let k = 0, len = entry.fields.length; k < len; k++) {
-                    const field = entry.fields[k];
-                    field.touched = false;
-                    field.dirty = false;
-                    field.initialValue = getFieldValue(field.element);
-                }
+				const errors = controller.errors;
+				for (const key in errors) {
+					errors[key] = "";
+				}
 
-                touch(contextOwner, "ud");
-            };
+				updateFormValidity(entry);
+
+				for (let k = 0, len = entry.fields.length; k < len; k++) {
+					const field = entry.fields[k];
+
+					field.touched = false;
+					field.dirty = false;
+					field.validating = false;
+					field.initialValue = getFieldValue(field.element);
+				}
+
+				entry.wasReset = true;
+				touch(contextOwner, "ud");
+			};
 
             entry.controller.getField = (name) => {
                 const states = getFieldStates(name);
@@ -2149,6 +2552,72 @@ function processFormDirective(nodes, vm, context, scope) {
 					return undefined;
 				}
 				return states[0].value;
+			};
+
+			/**
+			 * Sets a validation error for a field.
+			 *
+			 * @param {string} name
+			 * Field name.
+			 * @param {string} message
+			 * Error message.
+			 *
+			 * @returns {boolean}
+			 * Returns `true` if the error changed.
+			 */
+			entry.controller.setError = (name, message) => {
+				if (!name) {
+					return false;
+				}
+
+				message = typeof message === "string"
+					? message.trim()
+					: "";
+
+				const errors = entry.controller.errors;
+
+				if (errors[name] === message) {
+					return false;
+				}
+
+				errors[name] = message;
+
+				updateFormValidity(entry);
+				touch(contextOwner, "ud");
+
+				return true;
+			};
+
+			/**
+			 * Clears the validation error for a field.
+			 *
+			 * @param {string} name
+			 * Field name.
+			 *
+			 * @returns {boolean}
+			 * Returns `true` if the error changed.
+			 */
+			entry.controller.resetError = (name) => {
+				if (!name) {
+					return false;
+				}
+
+				const errors = entry.controller.errors;
+
+				if (!(name in errors)) {
+					return false;
+				}
+
+				if (errors[name] === "") {
+					return false;
+				}
+
+				errors[name] = "";
+
+				updateFormValidity(entry);
+				touch(contextOwner, "ud");
+
+				return true;
 			};
 
             entry.controller.setValue = (name, value) => {
@@ -2212,8 +2681,10 @@ function processFormDirective(nodes, vm, context, scope) {
                     fieldState.initialValue = getFieldValue(input);
                 }
 
-                recalculateControllerState();
-                return true;
+				entry.controller.resetError(name);
+				recalculateControllerState();
+
+				return true;
             };
 
             forms[key] = entry.controller;
@@ -2241,9 +2712,22 @@ function processFormDirective(nodes, vm, context, scope) {
  * The directive may only be used on `<form>` elements that also declare
  * an `@form` directive.
  *
- * Before invoking the submit handler, every validator registered through
- * `@validate` is executed. Submission is cancelled as soon as one validator
- * fails.
+ * Before invoking the submit handler, all validators registered through
+ * `@validate` are executed according to the form's validation mode:
+ *
+ * - `sequential` (default):
+ *   Validators run one after another and submission stops immediately
+ *   when the first validation fails. The first invalid field receives
+ *   focus.
+ *
+ * - `parallel`:
+ *   All validators run concurrently. Submission waits for every
+ *   validation to complete before determining validity. If one or more
+ *   validations fail, the first invalid field receives focus.
+ *
+ * Form and field validation state (`validating`) is managed by the
+ * validation system itself and may remain `true` while asynchronous
+ * validators are still pending.
  *
  * Supported expressions:
  *
@@ -2258,8 +2742,17 @@ function processFormDirective(nodes, vm, context, scope) {
  *
  * are not supported.
  *
- * Function arguments may be arbitrary expressions and are evaluated through
- * `vm.evaluate()` immediately before the handler is invoked.
+ * Function arguments may be arbitrary expressions and are evaluated
+ * through `vm.evaluate()` immediately before the handler is invoked.
+ *
+ * Submit handlers may be synchronous or asynchronous. The form
+ * controller's `submitting` state remains `true` until the handler
+ * completes or throws.
+ *
+ * The `submitted` flag is set only after successful validation and
+ * successful completion of the submit handler. If the submit handler
+ * calls `controller.reset()`, its state changes are preserved and not
+ * overwritten by the submission lifecycle.
  *
  * The first argument passed to every submit handler is:
  *
@@ -2267,16 +2760,16 @@ function processFormDirective(nodes, vm, context, scope) {
  *     event,
  *     form,
  *     formData,
- *     controller,
- *     context
+ *     controller
  * }
  *
  * Remaining arguments are the evaluated directive arguments.
  *
- * @param {HTMLFormElement[]} nodes - Elements containing `@submit`.
- * @param {Object} vm - Virtual machine instance.
- * @param {Object} context - Runtime evaluation context.
- * @param {Object} scope - Active effect scope.
+ * @param {HTMLFormElement[]} nodes - Form elements containing `@submit`.
+ * @param {Object} vm - Virtual machine instance used for expression evaluation.
+ * @param {Object} context - Current runtime evaluation context.
+ * @param {Object} scope - Active effect scope used for cleanup registration.
+ * @returns {void}
  */
 function processSubmitDirective(nodes, vm, context, scope) {
     const cleanups = scope.cleanups;
@@ -2368,97 +2861,137 @@ function processSubmitDirective(nodes, vm, context, scope) {
             }
 
             const controller = entry.controller;
+			const validationMode = entry.validationMode;
             const validators = entry.validators;
 
             const handleSubmit = async (event) => {
-                event.preventDefault();
+				event.preventDefault();
 
-                controller.submitting = true;
-                touch(contextOwner, "ud");
+				if (controller.submitting) {
+					return;
+				}
 
-                let valid = true;
+				controller.submitting = true;
+				touch(contextOwner, "ud");
 
-                for (
-                    let j = 0, validatorsLength = validators.length;
-                    j < validatorsLength;
-                    j++
-                ) {
-                    const validator = validators[j];
+				let valid = true;
+				let firstInvalid = null;
 
-                    if (!(await validator.validate())) {
-                        valid = false;
+				try {
+					if (validationMode === "parallel") {
+						const results = await Promise.all(
+							validators.map((validator) =>
+								validator.validate("submit")
+							)
+						);
 
-                        // Focus the first invalid control.
-                        validator.element.focus();
+						for (
+							let i = 0, length = results.length; 
+							i < length; 
+							i++
+						) {
+							if (!results[i]) {
+								valid = false;
 
-                        break;
-                    }
-                }
+								if (firstInvalid === null) {
+									firstInvalid = validators[i];
+								}
+							}
+						}
 
-                controller.valid = valid;
-                controller.submitted = valid;
-                controller.submitting = false;
+					} else { // sequential
+						for (
+							let i = 0, length = validators.length;
+							i < length;
+							i++
+						) {
+							const validator = validators[i];
 
-                // Notify reactive system of form state changes
-                touch(contextOwner, "ud");
+							if (!(await validator.validate("submit"))) {
+								valid = false;
+								firstInvalid = validator;
 
-                if (!valid) {
-                    return;
-                }
+								// Sequential mode stops immediately.
+								break;
+							}
+						}
+					}
 
-                try {
-                    const submitContext = {
-                        event,
-                        form: elem,
-                        formData: new FormData(elem),
-                        controller,
-                    };
+					controller.valid = valid;
+					touch(contextOwner, "ud");
 
-                    let args;
+					if (!valid) {
+						if (firstInvalid !== null) {
+							firstInvalid.element.focus();
+						}
 
-                    if (exprArgs !== undefined) {
-                        const argsLength = exprArgs.length;
+						return;
+					}
 
-                        if (argsLength > 0) {
-                            args = new Array(argsLength);
+					const submitContext = {
+						event,
+						form: elem,
+						formData: new FormData(elem),
+						controller,
+					};
 
-                            for (let k = 0; k < argsLength; k++) {
-                                args[k] = vm.evaluate(
-                                    exprArgs[k],
-                                    context
-                                );
-                            }
-                        }
-                    }
+					let args;
 
-                    if (args === undefined) {
-                        submitFn(submitContext);
+					if (exprArgs !== undefined) {
+						const length = exprArgs.length;
 
-                    } else {
-                        switch (args.length) {
-                            case 1:
-                                submitFn(submitContext, args[0]);
-                                break;
+						if (length > 0) {
+							args = new Array(length);
 
-                            case 2:
-                                submitFn(submitContext, args[0], args[1]);
-                                break;
+							for (let i = 0; i < length; i++) {
+								args[i] = vm.evaluate(
+									exprArgs[i],
+									context
+								);
+							}
+						}
+					}
 
-                            case 3:
-                                submitFn(submitContext, args[0], args[1], args[2]);
-                                break;
+					//----------------------------------------------------------
+					// Invoke submit handler
+					//----------------------------------------------------------
 
-                            default:
-                                submitFn(submitContext, ...args);
-                        }
-                    }
+					if (args === undefined) {
+						await submitFn(submitContext);
 
-                } catch (err) {
-                    console.warn(
-                        `[@submit] Error evaluating "${directive}":`, err
-                    );
-                }
-            };
+					} else {
+						switch (args.length) {
+							case 1:
+								await submitFn(submitContext, args[0]);
+								break;
+
+							case 2:
+								await submitFn(submitContext, args[0], args[1]);
+								break;
+
+							case 3:
+								await submitFn(submitContext, args[0], args[1], args[2]);
+								break;
+
+							default:
+								await submitFn(submitContext, ...args);
+						}
+					}
+
+					// Submission succeeded. Don't overwrite a reset() call.
+					if (!entry.wasReset) {
+						controller.submitted = true;
+					}
+
+				} catch (err) {
+					console.warn(`[@submit] Error evaluating "${directive}":`, err);
+
+				} finally {
+					controller.submitting = false;
+					entry.wasReset = false;
+					touch(contextOwner, "ud");
+				}
+			};
 
             elem.addEventListener("submit", handleSubmit);
 
@@ -3103,7 +3636,7 @@ export function bindDOM(
 
 	processIfDirective(directives.if, vm, context, scope);
 	processElseIfDirective(directives.elseif);
-  processElseDirective(directives.else);
+    processElseDirective(directives.else);
 
 	processTeleportDirective(directives.teleport, scope);
 }
