@@ -230,10 +230,6 @@ export const Counter = createComponent({
 		console.log(ctx.refs.counter);
 	},
 
-	onMount(root, ctx) {
-		console.log(ctx.refs.counter);
-	},
-
 	template: () => html`
 		<div>
 			<div @text="message|uppercase"></div>
@@ -547,7 +543,7 @@ export const Counter = createComponent({
 						name="username"
 						placeholder="Username"
 						@validate="required uniqueName"
-						@trigger="submit"
+						@trigger="live submit"
 					>
 
 					<div @text="ud.forms.parallelForm.errors.username" @style="'color:red;'"></div>
