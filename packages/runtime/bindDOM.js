@@ -1,4 +1,4 @@
-import {
+﻿import {
 	createSignal, 
 	effect, 
 	touch
@@ -1503,15 +1503,13 @@ function updateFormValidity(entry) {
  * validation cycle:
  *
  * {
- *     trigger,    // "live" | "lazy" | "submit" | "manual"
- *     element,    // HTML form control being validated
- *     field,      // Internal field state or null
- *     form,       // Parent HTMLFormElement or null
- *     controller  // Parent form controller or undefined
+ *     trigger,   // "live" | "lazy" | "submit"
+ *     element,   // HTML form control being validated
+ *     event      // Event that initiated validation, if available
  * }
  *
- * This allows validators to vary their behavior depending on the source
- * of validation:
+ * This allows validators to vary their behavior depending on how
+ * validation was triggered:
  *
  *   required(value, ctx) {
  *       if (
@@ -1538,6 +1536,15 @@ function updateFormValidity(entry) {
  * Example:
  *
  *   `ud.forms.login.errors.email`
+ *
+ * To prevent race conditions caused by overlapping asynchronous validators,
+ * validation execution is coordinated using:
+ *
+ * - a per-field validation version counter; and
+ * - a queued validation promise.
+ *
+ * Older validation results are discarded automatically if a newer
+ * validation cycle starts before the previous one completes.
  *
  * Each validated field maintains the following reactive state:
  *
@@ -1589,8 +1596,8 @@ function updateFormValidity(entry) {
  *   Validators execute one at a time and stop on the first failure.
  *
  * - `parallel`
- *   Validators execute concurrently and all validations are allowed to
- *   complete before the final form validity is determined.
+ *   All field validations execute concurrently and the form waits for
+ *   every validation to complete before determining final validity.
  *
  * Validators registered by this directive are consumed automatically by
  * `@submit`.
@@ -1806,6 +1813,20 @@ function processValidateDirective(nodes, vm, context, scope) {
 			};
 
             const validate = async (triggerType = "live", event = null) => {
+				if (fieldState !== null && fieldState.validationRunning) {
+					fieldState.pendingTriggerType = triggerType;
+				    fieldState.pendingEvent = event;
+
+					return true;
+				}
+
+				let validationId = 0;
+
+				if (fieldState !== null) {
+					fieldState.validationRunning = true;
+					validationId = ++fieldState.validationId;
+				}
+
 				beginValidation();
 
 				try {
@@ -1927,6 +1948,10 @@ function processValidateDirective(nodes, vm, context, scope) {
 						}
 					}
 
+					if (fieldState !== null && validationId !== fieldState.validationId) {
+						return false;
+					}
+
 					if (fieldState !== null && fieldState.name) {
 						if (error === "") {
 							clearFieldError(fieldState.name);
@@ -1942,7 +1967,11 @@ function processValidateDirective(nodes, vm, context, scope) {
 						`[@validate] Error evaluating "${expr}":`, err
 					);
 
-					if (fieldState !== null && fieldState.name) {
+					if (
+						fieldState !== null &&
+						validationId === fieldState.validationId &&
+						fieldState.name
+					) {
 						setFieldError(fieldState.name, DEFAULT_VAL_ERROR);
 					}
 
@@ -1950,6 +1979,25 @@ function processValidateDirective(nodes, vm, context, scope) {
 
 				} finally {
 					endValidation();
+
+					if (fieldState !== null) {
+						fieldState.validationRunning = false;
+
+						const pendingTriggerType = fieldState.pendingTriggerType;
+				        const pendingEvent = fieldState.pendingEvent;
+
+						if (pendingTriggerType !== "") {
+							fieldState.pendingTriggerType = "";
+							fieldState.pendingEvent = null;
+
+							queueMicrotask(() => {
+								validate(
+									pendingTriggerType,
+									pendingEvent,
+								).catch(() => {});
+							});
+						}
+					}
 				}
 			};
 
@@ -1974,6 +2022,12 @@ function processValidateDirective(nodes, vm, context, scope) {
                 touched: false,
                 dirty: false,
                 initialValue: getCurrentValue(),
+
+				// Validation cancellation support.
+				validationId: 0,
+				validationRunning: false,
+				pendingTriggerType: "",
+				pendingEvent: null,
             } : null;
 
             const updateFormState = () => {
