@@ -1601,6 +1601,15 @@ function updateFormValidity(entry) {
  * - uniqueness checks
  * - long-running asynchronous computations
  *
+ * To prevent race conditions caused by overlapping asynchronous validators,
+ * validation execution is coordinated using:
+ *
+ * - a per-field validation version counter; and
+ * - a queued validation promise.
+ *
+ * Older validation results are discarded automatically if a newer
+ * validation cycle starts before the previous one completes.
+ *
  * Each validated field maintains the following reactive state:
  *
  * ```javascript
