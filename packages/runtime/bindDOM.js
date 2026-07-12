@@ -1476,10 +1476,10 @@ function updateFormValidity(entry) {
  *
  * Examples:
  *
- *   `@validate="required"`
- *   `@validate="required email"`
- *   `@validate="required min:8"`
- *   `@validate="between:5:10"`
+ * `@validate="required"`
+ * `@validate="required email"`
+ * `@validate="required min:8"`
+ * `@validate="between:5:10"`
  *
  * Each validator expression must resolve to a function defined on the
  * component context (typically under `methods`). Validator names are
@@ -1490,64 +1490,120 @@ function updateFormValidity(entry) {
  *
  * Validator signature:
  *
- *   validator(value, ...args, validationContext)
+ * @example
+ * ```javascript
+ * validator(value, ...args, validationContext)
+ * ```
  *
  * Examples:
- *
- *   required(value, validationContext)
- *   email(value, validationContext)
- *   min(value, limit, validationContext)
- *   between(value, min, max, validationContext)
+ * 
+ *@example
+ * ```javascript
+ * required(value, validationContext)
+ * email(value, validationContext)
+ * min(value, limit, validationContext)
+ * between(value, min, max, validationContext)
+ * ```
  *
  * The `validationContext` object contains information about the current
  * validation cycle:
  *
+ * @example
+ * ```javascript
  * {
  *     trigger,   // "live" | "lazy" | "submit"
  *     element,   // HTML form control being validated
- *     event      // Event that initiated validation, if available
+ *     event,     // Event that initiated validation, if available
+ *     signal     // AbortSignal for async cancellation
  * }
+ * ```
  *
  * This allows validators to vary their behavior depending on how
  * validation was triggered:
  *
- *   required(value, ctx) {
- *       if (
- *           ctx.trigger === "submit" &&
- *           value.trim() === ""
- *       ) {
- *           return "This field is required";
- *       }
+ * @example
+ * ```javascript
+ * required(value, ctx) {
+ *     if (
+ *         ctx.trigger === "submit" &&
+ *         value.trim() === ""
+ *     ) {
+ *         return "This field is required";
+ *     }
  *
- *       return true;
- *   }
+ *     return true;
+ * }
+ * ```
+ *
+ * The `signal` property allows asynchronous validators to cancel
+ * in-flight operations when a newer validation cycle supersedes the
+ * current one.
+ *
+ * Example:
+ *
+ * @example
+ * ```javascript
+ * async uniqueEmail(value, ctx) {
+ *     const response = await fetch(
+ *         "/api/check-email",
+ *         {
+ *             signal: ctx.signal
+ *         }
+ *     );
+ *
+ *     const data = await response.json();
+ *
+ *     return data.available
+ *         ? true
+ *         : "Email is already registered";
+ * }
+ * ```
+ *
+ * Validators should treat an `AbortError` as a normal cancellation
+ * condition and avoid displaying validation errors for aborted requests.
  *
  * Validator return values:
  *
- *   - `true` when validation succeeds.
- *   - A non-empty string containing the validation error message when
- *     validation fails.
+ * - `true` when validation succeeds.
+ * - A non-empty string containing the validation error message when
+ *   validation fails.
  *
  * Validation stops at the first failing validator and the resulting error
  * message is stored on the parent form controller:
  *
- *   `ud.forms.<formName>.errors.<fieldName>`
+ * @example
+ * ```javascript
+ * ud.forms.<formName>.errors.<fieldName>
+ * ```
  *
  * Example:
  *
- *   `ud.forms.login.errors.email`
+ * @example
+ * ```javascript
+ * ud.forms.login.errors.email
+ * ```
  *
  * To prevent race conditions caused by overlapping asynchronous validators,
  * validation execution is coordinated using:
  *
- * - a per-field validation version counter; and
- * - a queued validation promise.
+ * - a per-field validation version counter;
+ * - a queued validation promise; and
+ * - an `AbortController` for cancelling in-flight asynchronous work.
  *
- * Older validation results are discarded automatically if a newer
- * validation cycle starts before the previous one completes.
+ * Starting a new validation cycle automatically aborts the previous
+ * validation's `AbortSignal`. Older validation results are discarded
+ * and cannot overwrite the result of newer validations.
+ *
+ * This makes asynchronous validators safe for operations such as:
+ *
+ * - HTTP requests (`fetch`)
+ * - debounced server-side validation
+ * - uniqueness checks
+ * - long-running asynchronous computations
  *
  * Each validated field maintains the following reactive state:
  *
+ * ```javascript
  * {
  *     element,
  *     name,
@@ -1556,9 +1612,12 @@ function updateFormValidity(entry) {
  *     validating,
  *     initialValue
  * }
+ * ```
  *
  * The parent form controller exposes:
  *
+ * @example
+ * ```javascript
  * {
  *     valid,
  *     validating,
@@ -1569,9 +1628,12 @@ function updateFormValidity(entry) {
  *     validationMode,
  *     errors
  * }
+ * ```
  *
  * Example controller shape:
  *
+ * @example
+ * ```javascript
  * {
  *     valid: true,
  *     validating: false,
@@ -1585,6 +1647,7 @@ function updateFormValidity(entry) {
  *         password: ""
  *     }
  * }
+ * ```
  *
  * Validation state is coordinated using a per-form pending validation
  * counter, allowing multiple asynchronous validators to run concurrently
@@ -1825,6 +1888,9 @@ function processValidateDirective(nodes, vm, context, scope) {
 				if (fieldState !== null) {
 					fieldState.validationRunning = true;
 					validationId = ++fieldState.validationId;
+
+					fieldState.validationController?.abort();
+					fieldState.validationController = new AbortController();
 				}
 
 				beginValidation();
@@ -1923,6 +1989,7 @@ function processValidateDirective(nodes, vm, context, scope) {
 							trigger: triggerType,
 							element: elem,
 							event,
+							signal: fieldState?.validationController?.signal,
 						};
 
 						let result = invokeValidator(
@@ -1963,6 +2030,10 @@ function processValidateDirective(nodes, vm, context, scope) {
 					return error === "";
 
 				} catch (err) {
+					if (err.name === "AbortError") {
+						return false;
+					}
+
 					console.warn(
 						`[@validate] Error evaluating "${expr}":`, err
 					);
@@ -2028,6 +2099,8 @@ function processValidateDirective(nodes, vm, context, scope) {
 				validationRunning: false,
 				pendingTriggerType: "",
 				pendingEvent: null,
+
+				validationController: null,
             } : null;
 
             const updateFormState = () => {
@@ -2255,6 +2328,8 @@ function processValidateDirective(nodes, vm, context, scope) {
 
 			// Cleanup closure to remove all listeners when the component is destroyed.
 			cleanups.push(() => {
+				fieldState?.validationController?.abort();
+
 				cleanupLive?.();
 				cleanupLazy?.();
 				cleanupSubmit?.();
