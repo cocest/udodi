@@ -80,7 +80,7 @@ function registerAndVerifyKey(
  */
 export function createComponent({
 	name = "",
-	state = {},                   // for reactive state (auto-tracked by framework)
+	state = () => ({}),           // for reactive state (auto-tracked by framework)
 	computed: computedProps = {}, // for computed properties
 	interceptors = {},            // for data transformations before state updates
 	methods = {},                 // for event handlers and normal functions (formatters, helpers, etc.)
@@ -91,6 +91,26 @@ export function createComponent({
 	style = "",                   // for CSS styles
 }) {
 	const compName = name || "unknown";
+
+	if (typeof state !== "function") {
+		throw new TypeError(
+			`[createComponent] Invalid state in Component "${compName}". ` +
+			'The "state" must be a function that returns an object.'
+		);
+	}
+
+	let lastStateInstance = state();
+
+	if (
+		lastStateInstance === null ||
+		typeof lastStateInstance !== "object" ||
+		Array.isArray(lastStateInstance)
+	) {
+		throw new TypeError(
+			`[createComponent] Invalid state in Component "${compName}". ` +
+			'The "state()" must return an object.'
+		);
+	}
 
 	/**
 	 * Registry of all root-level names exposed on the component context.
@@ -108,7 +128,7 @@ export function createComponent({
 	 * This avoids repeatedly allocating arrays and performing prototype
 	 * chain lookups inside hot paths such as the context membrane.
 	 */
-	const stateKeys = Object.keys(state);
+	const stateKeys = Object.keys(lastStateInstance);
 	const computedKeys = Object.keys(computedProps);
 	const methodKeys = Object.keys(methods);
 
@@ -117,7 +137,7 @@ export function createComponent({
 	const methodKeySet = new Set(methodKeys);
 
 	const configurationGroups = [
-		[state, "state"],
+		[lastStateInstance, "state"],
 		[computedProps, "computed"],
 		[methods, "methods"]
 	];
@@ -136,28 +156,6 @@ export function createComponent({
 			);
 		}
 	}
-
-	/**
-	 * Creates a safe shallow copy of component state for each instance.
-	 *
-	 * This avoids the fragility of structuredClone() for real-world state that
-	 * may contain functions, DOM nodes, or other non-cloneable values.
-	 *
-	 * A shallow copy is sufficient because Udodi's reactivity model is top-level
-	 * only; nested objects are not auto-proxied and should be replaced as a unit
-	 * when needed.
-	 */
-	function createInstanceState(sourceState) {
-		const instanceState = Object.create(null);
-		const keys = Object.keys(sourceState);
-
-		for (let i = 0; i < keys.length; i++) {
-			const key = keys[i];
-			instanceState[key] = sourceState[key];
-		}
-
-		return instanceState;
-	}
 	
 	/**
 	 * Creates a component instance.
@@ -175,8 +173,17 @@ export function createComponent({
 	 */
 	function Component(props = {}) {
 		const propKeySet = new Set();
+		const internalState = state();
 
-		const internalState = createInstanceState(state);
+		// Check if a reference to state object is being re-used
+		if (internalState === lastStateInstance) {
+			console.warn(
+				`[createComponent] state() in Component "${compName}" returned the ` + 
+				`same object for multiple instances. The "state()" should return a fresh object.`
+			);
+		}
+
+		lastStateInstance = internalState;
 
 		// Initialize the framework namespace (ud)
 		internalState.ud = {
@@ -400,8 +407,8 @@ export function createComponent({
 			onUnmount(root) {
 				try {
 					runScopeCleanup(watcherScope, "[component]");
-					onUnmount?.(root, publicContextMembrane);
 					runScopeCleanup(computedScope, "[component computed]");
+					onUnmount?.(root, publicContextMembrane);
 
 				} catch (err) {
 					console.warn(
