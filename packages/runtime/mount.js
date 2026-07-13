@@ -140,8 +140,8 @@ export function mount(component, container, vm) {
 		};
 
 		// Inject the runtime cleanup capability into the sandbox membrane safely
-		if (component._membrane) {
-			component._membrane._injectCleanupHook = (fn) => {
+		if (component.publicContext) {
+			component.publicContext._injectCleanupHook = (fn) => {
 				scope.cleanups.push(fn);
 			};
 		}
@@ -156,8 +156,11 @@ export function mount(component, container, vm) {
 		throw err;
 	}
 
-	component.unmount = unmount;
 	getCleanupObserver();
 
-	return component;
+	return {
+		name: componentName,
+		context: component.publicContext,
+		unmount,
+	};
 }

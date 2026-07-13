@@ -33,8 +33,10 @@ describe("createComponent props", () => {
 
 	it("rejects props that collide with existing state keys", () => {
 		const Counter = createComponent({
-			state: {
-				count: 0,
+			state() {
+				return {
+					count: 0,
+				};
 			},
 			template: () => `<p @text="count"></p>`,
 		});
@@ -50,15 +52,19 @@ describe("createComponent props", () => {
 describe("createComponent methods", () => {
 	it("keeps methods flat on the public context", () => {
 		const Profile = createComponent({
-			state: {
-				firstName: "Ada",
-				lastName: "Lovelace",
+			state() {
+				return {
+					firstName: "Ada",
+					lastName: "Lovelace",
+				};
 			},
+
 			methods: {
 				getFullname() {
 					return `${this.firstName} ${this.lastName}`;
 				},
 			},
+
 			template: (ctx) => `<p>${ctx.getFullname()}</p>`,
 		});
 
@@ -71,14 +77,18 @@ describe("createComponent methods", () => {
 
 	it("keeps handlers flat on the internal context", async () => {
 		const Counter = createComponent({
-			state: {
-				count: 0,
+			state() {
+				return {
+					count: 0,
+				};
 			},
+
 			methods: {
 				increment() {
 					this.count = this.count + 1;
 				},
 			},
+
 			template: () => `
 				<button>
 					<span @text="count"></span>
@@ -100,14 +110,24 @@ describe("createComponent methods", () => {
 describe("createComponent computed", () => {
 	it("updates computed DOM bindings when state dependencies change", async () => {
 		const Counter = createComponent({
-			state: {
-				count: 1,
+			state() {
+				return {
+					count: 1,
+				};
 			},
+
+			methods: {
+				setCount(value) {
+					this.count = value;
+				},
+			},
+
 			computed: {
 				doubled(ctx) {
 					return ctx.count * 2;
 				},
 			},
+
 			template: () => `<p @text="doubled"></p>`,
 		});
 
@@ -116,7 +136,7 @@ describe("createComponent computed", () => {
 
 		expect(root.textContent).toBe("2");
 
-		instance.context.count = 2;
+		instance.context.setCount(2);
 		await Promise.resolve();
 
 		expect(root.textContent).toBe("4");
@@ -126,15 +146,25 @@ describe("createComponent computed", () => {
 		let calls = 0;
 
 		const Counter = createComponent({
-			state: {
-				count: 1,
+			state() {
+				return {
+					count: 1,
+				};
 			},
+
+			methods: {
+				setCount(value) {
+					this.count = value;
+				},
+			},
+
 			computed: {
 				doubled(ctx) {
 					calls++;
 					return ctx.count * 2;
 				},
 			},
+
 			template: () => `<p @text="doubled"></p>`,
 		});
 
@@ -145,7 +175,7 @@ describe("createComponent computed", () => {
 		expect(calls).toBe(1);
 
 		instance.unmount();
-		instance.context.count = 2;
+		instance.context.setCount(2);
 		await Promise.resolve();
 
 		expect(calls).toBe(1);
@@ -153,7 +183,7 @@ describe("createComponent computed", () => {
 });
 
 describe("createComponent validation errors", () => {
-	it("reacts to @validate errors rendered from ud.errors", async () => {
+	it("reacts to @validate errors rendered from form controller errors", async () => {
 		const Form = createComponent({
 			methods: {
 				between(value, min, max) {
@@ -163,36 +193,52 @@ describe("createComponent validation errors", () => {
 
 					return "Value is not within the specified range";
 				},
+
 				validName(value) {
 					return /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/.test(value)
 						? true
 						: "Invalid name format";
 				},
 			},
+
 			template: () => `
-				<div>
-					<input @validate="between:2:100 validName" @error="message" type="text">
-					<div @text="ud.errors.message"></div>
-				</div>
+				<form @form="login">
+					<input
+						name="message"
+						type="text"
+						@validate="between:2:100 validName"
+					>
+
+					<div @text="ud.forms.login.errors.message"></div>
+				</form>
 			`,
 		});
 
 		const root = document.createElement("div");
 		render(Form(), root);
+
 		await Promise.resolve();
 
-		expect(root.textContent).not.toContain("Value is not within the specified range");
+		expect(root.textContent).not.toContain(
+			"Value is not within the specified range"
+		);
 
 		const input = root.querySelector("input");
+
 		if (!input) {
 			throw new Error("Expected input element to exist");
 		}
 
 		input.value = "1";
-		input.dispatchEvent(new Event("input", { bubbles: true }));
+		input.dispatchEvent(
+			new Event("input", { bubbles: true })
+		);
+
 		await Promise.resolve();
 
-		expect(root.textContent).toContain("Value is not within the specified range");
+		expect(root.textContent).toContain(
+			"Value is not within the specified range"
+		);
 	});
 });
 
@@ -201,10 +247,13 @@ describe("createComponent instance creation", () => {
 		const formatter = () => "ready";
 
 		const Example = createComponent({
-			state: {
-				label: "initial",
-				formatter,
+			state() {
+				return {
+					label: "initial",
+					formatter,
+				};
 			},
+
 			template: () => `<p @text="label"></p>`,
 		});
 
@@ -226,17 +275,27 @@ describe("createComponent instance creation", () => {
 describe("bindProp", () => {
 	it("keeps child props synchronized with parent state", async () => {
 		const Child = createComponent({
-			template: (ctx) => `<span @text="message"></span>`
+			template: () => `<span @text="message"></span>`,
 		});
 
 		const Parent = createComponent({
-			state: {
-				message: "Hello"
+			state() {
+				return {
+					message: "Hello",
+				};
+			},
+
+			methods: {
+				setMessage(value) {
+					this.message = value;
+				},
 			},
 
 			template: (ctx) => `
 				<div>
-					${Child({ message: bindProp(() => ctx.message) })}
+					${Child({
+						message: bindProp(() => ctx.message)
+					})}
 				</div>
 			`,
 		});
@@ -244,33 +303,38 @@ describe("bindProp", () => {
 		const root = document.createElement("div");
 		const instance = render(Parent(), root);
 
-		// Initial render
 		expect(root.textContent.trim()).toBe("Hello");
 
-		// Update parent state → should propagate to child via bindProp
-		instance.context.message = "Updated";
+		instance.context.setMessage("Updated");
 
-		// Wait for microtask queue (the reactivity system uses queueMicrotask)
 		await Promise.resolve();
 
 		expect(root.textContent.trim()).toBe("Updated");
 	});
-});
 
-describe("bindProp", () => {
 	it("does not make normal props reactive", async () => {
 		const Child = createComponent({
-			template: (ctx) => `<span @text="message"></span>`
+			template: () => `<span @text="message"></span>`,
 		});
 
 		const Parent = createComponent({
-			state: {
-				message: "Hello"
+			state() {
+				return {
+					message: "Hello",
+				};
+			},
+
+			methods: {
+				setMessage(value) {
+					this.message = value;
+				},
 			},
 
 			template: (ctx) => `
 				<div>
-					${Child({ message: ctx.message })}
+					${Child({
+						message: ctx.message
+					})}
 				</div>
 			`,
 		});
@@ -278,41 +342,45 @@ describe("bindProp", () => {
 		const root = document.createElement("div");
 		const instance = render(Parent(), root);
 
-		// Initial render - should show the snapshot value
 		expect(root.textContent.trim()).toBe("Hello");
 
-		// Update parent state
-		instance.context.message = "Updated";
+		instance.context.setMessage("Updated");
 
-		// Wait for reactivity flush
 		await Promise.resolve();
 
-		// Child should still show the original value (static snapshot)
 		expect(root.textContent.trim()).toBe("Hello");
 	});
-});
 
-describe("bindProp", () => {
 	it("supports binding computed values", async () => {
 		const Child = createComponent({
-			template: (ctx) => `<span @text="fullName"></span>`
+			template: () => `<span @text="fullName"></span>`,
 		});
 
 		const Parent = createComponent({
-			state: {
-				firstName: "Ada",
-				lastName: "Lovelace"
+			state() {
+				return {
+					firstName: "Ada",
+					lastName: "Lovelace",
+				};
+			},
+
+			methods: {
+				setFirstName(value) {
+					this.firstName = value;
+				},
 			},
 
 			computed: {
 				fullName(ctx) {
 					return `${ctx.firstName} ${ctx.lastName}`;
-				}
+				},
 			},
 
 			template: (ctx) => `
 				<div>
-					${Child({ fullName: bindProp(() => ctx.fullName) })}
+					${Child({
+						fullName: bindProp(() => ctx.fullName)
+					})}
 				</div>
 			`,
 		});
@@ -320,13 +388,10 @@ describe("bindProp", () => {
 		const root = document.createElement("div");
 		const instance = render(Parent(), root);
 
-		// Initial render
 		expect(root.textContent.trim()).toBe("Ada Lovelace");
 
-		// Update state that computed depends on
-		instance.context.firstName = "Grace";
+		instance.context.setFirstName("Grace");
 
-		// Wait for reactivity + computed update
 		await Promise.resolve();
 
 		expect(root.textContent.trim()).toBe("Grace Lovelace");

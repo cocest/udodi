@@ -6,8 +6,8 @@
  *
  * Behavior under test:
  * - Truthy expression  -> element is present in the DOM
- * - Falsy expression   -> element is replaced by a "@if" comment placeholder
- * - Reactive toggling   -> state changes mount/unmount the element live
+ * - Falsy expression   -> element is replaced by an "@if" comment placeholder
+ * - Reactive toggling  -> state changes mount/unmount the element live
  * - Errors in the expression are caught and treated as falsy
  * - The "@if" attribute is stripped once processed
  */
@@ -15,212 +15,354 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, createComponent } from "udodi";
 
-// Reactive updates are scheduled on a microtask queue, so tests must flush
-// microtasks before asserting on the DOM after a state mutation.
+// Reactive updates are scheduled on a microtask queue.
 function flushMicrotasks() {
-  return Promise.resolve();
+	return Promise.resolve();
 }
 
 function mountToDOM(component) {
-  const root = document.createElement("div");
-  const instance = render(component(), root);
-  return { root, instance, context: instance.context };
+	const root = document.createElement("div");
+	const instance = render(component(), root);
+
+	return {
+		root,
+		instance,
+		context: instance.context,
+	};
 }
 
 describe("@if directive", () => {
-  it("renders the element when the expression is truthy", () => {
-    const Component = createComponent({
-      state: { visible: true },
-      template: () => `
+	it("renders the element when the expression is truthy", () => {
+		const Component = createComponent({
+			state() {
+				return {
+					visible: true,
+				};
+			},
+
+			template: () => `
 				<div>
 					<p @if="visible" data-testid="target">Hello</p>
 				</div>
 			`,
-    });
+		});
 
-    const { root } = mountToDOM(Component);
+		const { root } = mountToDOM(Component);
 
-    expect(root.querySelector('[data-testid="target"]')).not.toBeNull();
-  });
+		expect(
+			root.querySelector('[data-testid="target"]')
+		).not.toBeNull();
+	});
 
-  it("does not render the element when the expression is falsy", () => {
-    const Component = createComponent({
-      state: { visible: false },
-      template: () => `
+	it("does not render the element when the expression is falsy", () => {
+		const Component = createComponent({
+			state() {
+				return {
+					visible: false,
+				};
+			},
+
+			template: () => `
 				<div>
 					<p @if="visible" data-testid="target">Hello</p>
 				</div>
 			`,
-    });
+		});
 
-    const { root } = mountToDOM(Component);
+		const { root } = mountToDOM(Component);
 
-    expect(root.querySelector('[data-testid="target"]')).toBeNull();
-  });
+		expect(
+			root.querySelector('[data-testid="target"]')
+		).toBeNull();
+	});
 
-  it("leaves a comment placeholder in place of a falsy element", () => {
-    const Component = createComponent({
-      state: { visible: false },
-      template: () => `
+	it("leaves a comment placeholder in place of a falsy element", () => {
+		const Component = createComponent({
+			state() {
+				return {
+					visible: false,
+				};
+			},
+
+			template: () => `
 				<div>
 					<p @if="visible" data-testid="target">Hello</p>
 				</div>
 			`,
-    });
+		});
 
-    const { root } = mountToDOM(Component);
-    const container = root.querySelector("div");
+		const { root } = mountToDOM(Component);
+		const container = root.querySelector("div");
 
-    const hasIfComment = Array.from(container.childNodes).some(
-      (node) => node.nodeType === Node.COMMENT_NODE && node.data === "@if",
-    );
+		const hasIfComment = Array.from(container.childNodes).some(
+			(node) =>
+				node.nodeType === Node.COMMENT_NODE &&
+				node.data === "@if"
+		);
 
-    expect(hasIfComment).toBe(true);
-  });
+		expect(hasIfComment).toBe(true);
+	});
 
-  it("re-inserts the element when state becomes truthy again", async () => {
-    const Component = createComponent({
-      state: { visible: false },
-      template: () => `
+	it("re-inserts the element when state becomes truthy again", async () => {
+		const Component = createComponent({
+			state() {
+				return {
+					visible: false,
+				};
+			},
+
+			methods: {
+				show() {
+					this.visible = true;
+				},
+			},
+
+			template: () => `
 				<div>
 					<p @if="visible" data-testid="target">Hello</p>
 				</div>
 			`,
-    });
+		});
 
-    const { root, context } = mountToDOM(Component);
+		const { root, context } = mountToDOM(Component);
 
-    expect(root.querySelector('[data-testid="target"]')).toBeNull();
+		expect(
+			root.querySelector('[data-testid="target"]')
+		).toBeNull();
 
-    context.visible = true;
-    await flushMicrotasks();
+		context.show();
 
-    expect(root.querySelector('[data-testid="target"]')).not.toBeNull();
-  });
+		await flushMicrotasks();
 
-  it("supports rapid toggling without leaving duplicate nodes", async () => {
-    const Component = createComponent({
-      state: { visible: true },
-      template: () => `
+		expect(
+			root.querySelector('[data-testid="target"]')
+		).not.toBeNull();
+	});
+
+	it("supports toggling without leaving duplicate nodes", async () => {
+		const Component = createComponent({
+			state() {
+				return {
+					visible: true,
+				};
+			},
+
+			methods: {
+				show() {
+					this.visible = true;
+				},
+
+				hide() {
+					this.visible = false;
+				},
+			},
+
+			template: () => `
 				<div>
 					<p @if="visible" data-testid="target">Hello</p>
 				</div>
 			`,
-    });
+		});
 
-    const { root, context } = mountToDOM(Component);
+		const { root, context } = mountToDOM(Component);
 
-    context.visible = false;
-    context.visible = true;
-    context.visible = false;
-    await flushMicrotasks();
+		expect(
+			root.querySelectorAll('[data-testid="target"]').length
+		).toBe(1);
 
-    expect(root.querySelectorAll('[data-testid="target"]').length).toBe(0);
+		context.hide();
+		await flushMicrotasks();
 
-    context.visible = true;
-    await flushMicrotasks();
+		expect(
+			root.querySelectorAll('[data-testid="target"]').length
+		).toBe(0);
 
-    expect(root.querySelectorAll('[data-testid="target"]').length).toBe(1);
-  });
+		context.show();
+		await flushMicrotasks();
 
-  it("evaluates dotted path expressions against nested-ish state", () => {
-    // Note: Udodi's reactive state is shallow (top-level only), so this
-    // verifies @if can still read a nested value on initial render.
-    const Component = createComponent({
-      state: { user: { isAdmin: true } },
-      template: () => `
+		expect(
+			root.querySelectorAll('[data-testid="target"]').length
+		).toBe(1);
+
+		context.hide();
+		await flushMicrotasks();
+
+		expect(
+			root.querySelectorAll('[data-testid="target"]').length
+		).toBe(0);
+	});
+
+	it("evaluates dotted path expressions against nested-ish state", () => {
+		const Component = createComponent({
+			state() {
+				return {
+					user: {
+						isAdmin: true,
+					},
+				};
+			},
+
+			template: () => `
 				<div>
 					<p @if="user.isAdmin" data-testid="target">Admin</p>
 				</div>
 			`,
-    });
+		});
 
-    const { root } = mountToDOM(Component);
+		const { root } = mountToDOM(Component);
 
-    expect(root.querySelector('[data-testid="target"]')).not.toBeNull();
-  });
+		expect(
+			root.querySelector('[data-testid="target"]')
+		).not.toBeNull();
+	});
 
-  it("treats a throwing state value as falsy and warns", () => {
-    // @if unwraps function-valued state by calling it. If that call throws,
-    // processIfDirective's catch should log a warning and fall back to false
-    // instead of crashing the render.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+	it("treats a throwing state value as falsy and warns", () => {
+		const warnSpy = vi
+			.spyOn(console, "warn")
+			.mockImplementation(() => {});
 
-    const Component = createComponent({
-      state: {
-        broken: () => {
-          throw new Error("boom");
-        },
-      },
-      template: () => `
+		const Component = createComponent({
+			state() {
+				return {
+					broken: () => {
+						throw new Error("boom");
+					},
+				};
+			},
+
+			template: () => `
 				<div>
 					<p @if="broken" data-testid="target">Hello</p>
 				</div>
 			`,
-    });
+		});
 
-    const { root } = mountToDOM(Component);
+		const { root } = mountToDOM(Component);
 
-    expect(root.querySelector('[data-testid="target"]')).toBeNull();
-    expect(warnSpy).toHaveBeenCalled();
+		expect(
+			root.querySelector('[data-testid="target"]')
+		).toBeNull();
 
-    warnSpy.mockRestore();
-  });
+		expect(warnSpy).toHaveBeenCalled();
 
-  it("treats a missing/undefined path as falsy without warning", () => {
-    // Unlike a throwing value, a simply-missing path resolves safely to
-    // undefined via readPath's null/undefined guards, so no warning fires.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		warnSpy.mockRestore();
+	});
 
-    const Component = createComponent({
-      state: {},
-      template: () => `
+	it("treats a missing/undefined path as falsy without warning", () => {
+		const warnSpy = vi
+			.spyOn(console, "warn")
+			.mockImplementation(() => {});
+
+		const Component = createComponent({
+			state() {
+				return {};
+			},
+
+			template: () => `
 				<div>
 					<p @if="missing.deeply.nested" data-testid="target">Hello</p>
 				</div>
 			`,
-    });
+		});
 
-    const { root } = mountToDOM(Component);
+		const { root } = mountToDOM(Component);
 
-    expect(root.querySelector('[data-testid="target"]')).toBeNull();
-    expect(warnSpy).not.toHaveBeenCalled();
+		expect(
+			root.querySelector('[data-testid="target"]')
+		).toBeNull();
 
-    warnSpy.mockRestore();
-  });
+		expect(warnSpy).not.toHaveBeenCalled();
 
-  it("removes the @if attribute from the element once processed", () => {
-    const Component = createComponent({
-      state: { visible: true },
-      template: () => `
+		warnSpy.mockRestore();
+	});
+
+	it("removes the @if attribute from the element once processed", () => {
+		const Component = createComponent({
+			state() {
+				return {
+					visible: true,
+				};
+			},
+
+			template: () => `
 				<div>
 					<p @if="visible" data-testid="target">Hello</p>
 				</div>
 			`,
-    });
+		});
 
-    const { root } = mountToDOM(Component);
-    const target = root.querySelector('[data-testid="target"]');
+		const { root } = mountToDOM(Component);
+		const target = root.querySelector('[data-testid="target"]');
 
-    expect(target.hasAttribute("@if")).toBe(false);
-  });
+		expect(target.hasAttribute("@if")).toBe(false);
+	});
 
-  // This test only works on real browser
-  /*it("cleans up the element and placeholder on unmount", () => {
-    const Component = createComponent({
-      state: { visible: true },
-      template: () => `
+	it("creates isolated state per component instance", async () => {
+		const Component = createComponent({
+			state() {
+				return {
+					visible: true,
+				};
+			},
+
+			methods: {
+				hide() {
+					this.visible = false;
+				},
+			},
+
+			template: () => `
 				<div>
 					<p @if="visible" data-testid="target">Hello</p>
 				</div>
 			`,
-    });
+		});
 
-    const { root, instance } = mountToDOM(Component);
+		const firstRoot = document.createElement("div");
+		const secondRoot = document.createElement("div");
 
-    instance.unmount();
+		const first = render(Component(), firstRoot);
+		const second = render(Component(), secondRoot);
 
-    expect(root.querySelector('[data-testid="target"]')).toBeNull();
-    expect(root.isConnected).toBe(false);
-  });*/
+		first.context.hide();
+
+		await flushMicrotasks();
+
+		expect(
+			firstRoot.querySelector('[data-testid="target"]')
+		).toBeNull();
+
+		expect(
+			secondRoot.querySelector('[data-testid="target"]')
+		).not.toBeNull();
+	});
+
+	// This test only works on a real browser.
+	/*
+	it("cleans up the element and placeholder on unmount", () => {
+		const Component = createComponent({
+			state() {
+				return {
+					visible: true,
+				};
+			},
+
+			template: () => `
+				<div>
+					<p @if="visible" data-testid="target">Hello</p>
+				</div>
+			`,
+		});
+
+		const { root, instance } = mountToDOM(Component);
+
+		instance.unmount();
+
+		expect(
+			root.querySelector('[data-testid="target"]')
+		).toBeNull();
+
+		expect(root.isConnected).toBe(false);
+	});
+	*/
 });

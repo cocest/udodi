@@ -99,7 +99,9 @@ describe("Tokenizer & Directive Expression Parser", () => {
 	describe("Path Tokens", () => {
 		it("accepts valid path tokens and dot paths", () => {
 			const component = createComponent({
-				state: { user: { name: "Jane" } },
+				state() {
+					return { user: { name: "Jane" } };
+				},
 				template: () => `
 					<span @text="user"></span>
 					<span @text="user.name"></span>
