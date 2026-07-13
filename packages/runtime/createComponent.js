@@ -187,7 +187,6 @@ export function createComponent({
 
 		// Initialize the framework namespace (ud)
 		internalState.ud = {
-			errors: Object.create(null), // For @validate and @error directives
 			forms: Object.create(null),  // For @form and @submit directives
 		};
 
@@ -394,11 +393,7 @@ export function createComponent({
 			name: compName,
 			template: html,
 			context: internalContext, // Handed over with open VM access
-			watcherScope,
-
-			// Private bridge reference so mount() can grab the proxy membrane 
-			// to inject the cleanup routine without breaking the sandbox
-			_membrane: publicContextMembrane,
+			publicContext: publicContextMembrane,
 
 			onMount(root) {
 				onMount?.(root, publicContextMembrane);
