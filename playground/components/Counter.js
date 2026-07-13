@@ -3,37 +3,39 @@ import { html, createComponent, touch } from 'udodi';
 export const Counter = createComponent({
 	name: "counter",
 
-	state: {
-		count: 0,
-		message: "Hello, World!",
-		btnColor: "firstcolor",
-		classTest: ['secondcolor'],
-		styleTest: { background: 'yellow' },
-		toogle: true,
+	state() {
+		return {
+			count: 0,
+			message: "Hello, World!",
+			btnColor: "firstcolor",
+			classTest: ['secondcolor'],
+			styleTest: { background: 'yellow' },
+			toogle: true,
 
-		// Test deep @bind path
-		user: {
-			name: "John Doe",
-		},
-
-		// Test @for and @key
-		users: [
-			{
-				id: 1,
+			// Test deep @bind path
+			user: {
 				name: "John Doe",
-				email: "john@example.com",
 			},
-			{
-				id: 2,
-				name: "Jane Smith",
-				email: "jane@example.com",
-			},
-			{
-				id: 3,
-				name: "Attamah Celestine",
-				email: "attamah@example.com",
-			},
-		],
+
+			// Test @for and @key
+			users: [
+				{
+					id: 1,
+					name: "John Doe",
+					email: "john@example.com",
+				},
+				{
+					id: 2,
+					name: "Jane Smith",
+					email: "jane@example.com",
+				},
+				{
+					id: 3,
+					name: "Attamah Celestine",
+					email: "attamah@example.com",
+				},
+			],
+		}
 	},
 
 	computed: {

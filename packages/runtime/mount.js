@@ -99,7 +99,9 @@ export function mount(component, container, vm) {
 		);
 	}
 	if (fragment.children.length > 1) {
-		throw new Error(`[mount] Component ${componentName} must have exactly ONE root element`);
+		throw new Error(
+			`[mount] Component ${componentName} must have exactly ONE root element`
+		);
 	}
 
 	let destroyed = false;
