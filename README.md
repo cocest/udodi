@@ -1,402 +1,171 @@
-# Udodi.js
+<p align="center">
+  <img src="./assets/udodi-github-banner.png" alt="udodi logo">
+</p>
 
-A lightweight reactive UI runtime built around declarative HTML directives, path-level reactivity, and component-first architecture.
+<p align="center">
+  <a href="https://www.npmjs.com/package/udodi">
+    <img src="https://img.shields.io/npm/v/udodi.svg" alt="npm">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/github/license/your-org/udodi" alt="License">
+  </a>
+  <a href="https://github.com/udodi/udodi/actions">
+    <img src="https://img.shields.io/github/actions/workflow/status/udodi/udodi/test.yml?branch=main" alt="Build">
+  </a>
+  <a href="https://www.npmjs.com/package/udodi">
+    <img src="https://img.shields.io/npm/dm/udodi" alt="Downloads">
+  </a>
+</p>
 
-Udodi.js lets you build interactive interfaces using clean HTML-like directives without virtual DOM overhead, JSX, or heavy compilation pipelines.
+<p align="center">
+  <a href="#installation"><strong>Installation</strong></a> •
+  <a href="#usage-example"><strong>Usage Example</strong></a> •
+  <a href="#documentation"><strong>Documentation</strong></a> •
+  <a href="#testing"><strong>Testing</strong></a> •
+  <a href="#roadmap"><strong>Roadmap</strong></a> •
+  <a href="#contributing"><strong>Contributing</strong></a>
+</p>
 
-It combines:
+## What is Udodi?
 
-- reactive component state
-- directive-driven rendering
-- shared reactive stores
-- query caching
-- overlays/modals
-- lifecycle cleanup
-- shallow high-performance reactivity
+Udodi is a lightweight, zero-dependency reactive UI runtime built around a minimalistic declarative HTML DSL, path-level reactivity, and a component-first architecture. 
 
-into a compact runtime that works both with and without a build step.
+Instead of relying on heavy runtime abstractions, deep proxies, or an expensive Virtual DOM reconciliation engine, Udodi tokenizes its declarative DSL into an Abstract Syntax Tree (AST) and compiles it into lightweight instructions executed by an internal instruction Virtual Machine (VM) running natively in the browser. 
 
-```html
-<div @style="background-color:cardBg color:getTextColor:mode">
-  <h1 @text="title"></h1>
-
-  <input
-    @bind="user.name"
-    @validate="required min:3"
-    @error="nameError"
-  >
-
-  <h3 @text="nameError"></h3>
-
-  <button @on="click.prevent:submit">
-    Save Changes
-  </button>
-</div>
-```
-
----
+The result is fine-grained reactivity anchored directly to DOM nodes, delivering fast execution and predictable runtime behavior. Because Udodi's DSL is compiled into VM instructions rather than evaluated as arbitrary JavaScript, it does not rely on `eval()` or `new Function()`, making it CSP-friendly and usable without a build step.
 
 ## Why Udodi?
 
-Udodi is designed for developers who want:
-
-- direct DOM rendering
-- predictable reactivity
-- minimal abstraction cost
-- no virtual DOM diffing
-- HTML-first UI composition
-- framework-like ergonomics without framework-scale complexity
-
----
-
-Unlike JSX-centric frameworks, Udodi keeps templates close to native HTML while still providing a modern reactive architecture.
-
-## Features
-
-- **Lightweight Runtime** — Tiny footprint with zero runtime dependencies and minimal abstraction overhead
-- **Fine-Grained Reactivity** — Path-level reactive updates without virtual DOM diffing or full component re-renders
-- **Directive-Driven UI** — Declarative HTML-first syntax using directives like @bind, @for, @if, @on, @style, and @class
-- **Modern Reactive Primitives** — Supports reactive state, computed values, watchers, signals, resolvers, and batched updates
-- **Direct DOM Rendering** — Updates the real DOM efficiently without JSX compilation or hydration complexity
-- **Built-In State Ecosystem** — Includes global stores, store modules, actions, subscriptions, and reactive query stores
-- **Async Query System** — Built-in caching, retries, invalidation, deduplication, scheduler integration, and AbortController support
-- **Overlay & Modal Runtime** — Stack-aware modal system with focus restoration, scroll locking, teleporting, and backdrop management
-- **Predictable Architecture** — Shallow reactivity and constrained directive expressions keep runtime behavior explicit and optimized
-- **Modern & Performant** — Built with ES2020+, tree-shakeable ESM output, and optimized for modern browsers
-- **Framework Agnostic** — Works as a simple browser script or integrates cleanly with bundlers and existing stacks
-- **Easy to Learn** — Familiar mental model for developers coming from Alpine.js, Vue, Angular, or template-driven frameworks
-- **No JSX Required** — Keep templates close to native HTML without introducing custom syntax layers
-- **Lifecycle & Cleanup Aware** — Automatic cleanup for effects, watchers, listeners, overlays, and component unmounting
-- **Component-Oriented Design** — Supports nested components, reactive props, lifecycle hooks, and isolated rendering contexts
-- **CSP-Friendly Direction** — Avoids reliance on heavyweight runtime evaluation patterns common in many UI frameworks
-
-## Directive-Based Templates
-
-Built-in directives include:
-
-- `@text`
-- `@bind`
-- `@on`
-- `@for`
-- `@if`
-- `@show`
-- `@class`
-- `@style`
-- `@attr`
-- `@validate`
-- `@ref`
-- `@teleport`
-
-## Shared State System
-
-- Global reactive store
-- Store modules
-- Batched updates
-- Actions
-- Store subscriptions
-- DevTools hooks
-
-## Query Stores
-
-Built-in async query system with:
-
-- caching
-- retries
-- invalidation
-- deduplication
-- scheduler integration
-- AbortController support
-
-## Overlay & Modal Runtime
-
-- Stack-aware modal system
-- Shared overlay root
-- Focus restoration
-- Scroll locking
-- Backdrop handling
-- Teleport support
-
-## Modern Runtime Architecture
-
-- ESM + IIFE builds
-- Tree-shakeable
-- Zero dependencies
-- Tiny runtime footprint
-- CSP-friendly architecture
-- Works with or without bundlers
+* **No Virtual DOM**: Directly mutates targeted DOM properties and text nodes, eliminating layout tree diffing costs.
+* **No JSX Needed**: Keeps your structural layout close to native, declarative HTML templates.
+* **Shallow & Path-Based Reactivity**: Bypasses deep runtime proxy overhead to ensure explicit state tracking and optimized browser memory.
+* **No Inline JavaScript**: Directives do not execute arbitrary JavaScript expressions. Instead, they use a minimalistic DSL built around paths, resolver calls, and literals, making templates easier to reason about while keeping compilation fast, predictable, and CSP-friendly.
+* **Built-in Application Systems:** Udodi includes reactive stores, a query store for managing server state, and a complete form system with built-in validation, giving applications essential state and data management capabilities out of the box.
 
 ## Installation
 
-### CDN (Recommended for quick prototyping)
-
+### CDN
 ```html
 <script src="https://cdn.jsdelivr.net/npm/udodi@latest/dist/udodi.iife.min.js"></script>
 ```
-
-Then use globally:
-
-```js
-const { render, createComponent, store, openModal } = Udodi;
+```javascript
+const { render, createComponent } = Udodi;
 ```
 
 ### Package Manager
-
 ```bash
-npm install udodi
-# or
-yarn add udodi
-# or
-pnpm add udodi
+npm install udodi # or yarn add udodi / pnpm add udodi
+```
+```javascript
+import { render, createComponent } from 'udodi';
 ```
 
-```js
-import { mount } from 'udodi';
-```
+## Usage Example
 
-## Quick Start
+```javascript
+import { createComponent, css, html, render } from "udodi";
 
-### 1. Create a Component
+const Counter = createComponent({
+  name: "Counter",
 
-```js
-import { createComponent } from "udodi";
-
-export const Counter = createComponent({
-  name: "counter",
-
-  state: {
-    count: 0
+  state() {
+    return {
+      count: 0
+    };
   },
 
-  computed: {
-    doubled(ctx) {
-      return ctx.count * 2;
+  methods: {
+    increment(event) {
+      this.count++;
     }
   },
 
-  handlers: {
-    increment(ctx) {
-      ctx.count++;
+  style: css`
+    :scope {
+      background: darkgreen;
+      padding: 15px;
+      border: 3px solid black;
     }
-  },
 
-  template: () => /*html*/`
-    <section class="card">
-      <h1>Counter</h1>
+    .text {
+      color: white;
+      font-weight: bold;
+    }
+  `,
 
-      <p>
-        Count:
-        <span @text="count"></span>
-      </p>
-
-      <p>
-        Doubled:
-        <span @text="doubled"></span>
-      </p>
-
-      <button @on="click:increment">
-        Increment
-      </button>
-    </section>
+  template: (ctx) => html`
+    <div>
+      <div class="text" @text="count"></div>
+      <button @on="click=increment">Increment</button>
+    </div>
   `
 });
+
+// Mount component to DOM
+render(Counter(), document.getElementById("app"));
 ```
-
-### 2. Mount the Component
-
-```js
-import { render } from "udodi";
-import { Counter } from "./Counter.js";
-
-render(
-  Counter(),
-  document.getElementById("app")
-);
-```
-
-## Architecture Notes
-
-Udodi intentionally avoids several heavyweight patterns common in modern UI frameworks.
-
-### No Virtual DOM
-
-Udodi updates the DOM directly through reactive bindings.
-
-### No JSX Requirement
-
-Templates remain HTML-oriented and framework-independent.
-
-### No Deep Proxying
-
-Reactivity is shallow and path-based by design.
-
-### No Arbitrary JS Expressions in Templates
-
-Directive expressions are intentionally constrained to:
-
-- paths
-- resolver calls
-- literals
-
-This keeps:
-
-- parsing predictable
-- runtime safer
-- templates easier to optimize
-
----
 
 ## Documentation
 
-The README only covers the essentials.
+For comprehensive guidance on building with Udodi, explore the master guides in this repository for an in-depth look at the framework, from everyday development to advanced runtime usage.
 
-For full documentation, architecture details, advanced APIs, and runtime behavior, see:
-
-- [User Guide](./docs/user-guide.md)
-- [Directive Reference](./docs/directives.md)
-- [Reactivity System](./docs/reactivity.md)
-- [Component API](./docs/components.md)
+[Explore the Comprehensive Documentation Suite](./docs/README.md)
 
 ## Development
 
-### Project Structure
+Udodi requires no build process for end users and can run directly through a CDN or standard JavaScript module. The repository itself is written in ES2020+, uses [tsup](https://egoist.dev) to produce fully tree-shakeable ESM modules and browser IIFE builds, and supports modern bundlers when needed.
 
 ```bash
-udodi/
-├── dist/              # Built library (ESM + IIFE)
-├── docs/              # Documentation
-├── packages/          # Source code
-├── playground/        # Live testing environment
-├── tests/             # Unit and integration tests
-├── tsup.config.js     # Build configuration
-└── package.json
-```
-
-### Scripts
-
-```bash
-# Build the library
+# Build the core library distribution
 npm run build
 
-# Start development playground
-cd playground
-npm install
-npm run dev
-
-# Testing
-npm test               # Run all tests once
-npm run test:watch     # Run tests in watch mode (recommended during development)
-npm run test:ui        # Open interactive browser UI for tests
+# Boot up the live playground workspace
+cd playground && npm install && npm run dev
 ```
 
-Udodi is bundled using **[tsup](https://tsup.egoist.dev/)** and outputs:
-
-- ESM modules
-- browser IIFE builds (`window.Udodi`)
-
----
+### Project Workspace Tree
+```text
+udodi/
+├── dist/              # Compiled core distribution builds (ESM + IIFE)
+├── docs/              # Comprehensive Markdown user guides
+├── packages/          # Decoupled core source modules
+├── playground/        # Local testing environment sandbox
+├── tests/             # Comprehensive Vitest suite packages
+└── tsup.config.js     # Build pipeline toolchain
+```
 
 ## Testing
 
-Udodi is designed to support both low-level runtime testing and high-level browser integration testing.
+Udodi uses **Vitest** to drive low-level framework runtime verification alongside real browser integration checks. Detailed specifications regarding testing setups can be viewed in our [Runtime Testing Guide](./docs/udodi-testing.md).
 
-The recommended testing strategy is:
+| Target Suite | Purpose |
+| :--- | :--- |
+| **Unit Tests** | Validates isolated compiler mechanics and reactive trackers |
+| **DOM Tests** | Asserts token directives modify node values correctly |
+| **Integration Tests** | Monitors deep component communication and unmount scopes |
 
-| Test Type | Purpose |
-|---|---|
-| Unit Tests | Verify isolated runtime behavior |
-| DOM Tests | Validate directive behavior and DOM updates |
-| Integration Tests | Verify component interaction and lifecycle behavior |
-| Browser Playground Tests | Validate real browser runtime behavior |
-| Performance Tests | Benchmark reactivity and rendering speed |
-
----
-
-### Test Structure
-
-All tests are located in the `tests/` directory:
-
+### Execution Commands
 ```bash
-tests/
-├── directives/
-│   ├── text.test.js
-│   ├── bind.test.js
-│   ├── if.test.js
-│   └── for.test.js
-├── reactivity/
-│   ├── signal.test.js
-│   ├── computed.test.js
-│   └── watcher.test.js
-└── integration/
-    └── component-lifecycle.test.js
+npm test                                  # Executes full test suite once
+npm run test:watch                        # Enables interactive hot-revising watch engine
+npm run test:ui                           # Launches the rich interactive browser testing panel
+npx vitest tests/unit/tokenizer.test.js   # Target a precise engine file suite
 ```
-
----
-
-### Running Tests
-
-Udodi uses **Vitest** for testing. Here are the most useful commands:
-
-#### Vitest Commands
-
-| Command                                     | Purpose                                              |
-|---------------------------------------------|------------------------------------------------------|
-| `npm test`                                  | Run all tests once                                   |
-| `npm run test:watch`                        | Watch mode (reruns on file changes)                  |
-| `npm run test:ui`                           | Beautiful browser UI                                 |
-| `npx vitest list`                           | List all discovered test files                       |
-| `npx vitest tests/unit/tokenizer.test.js`   | Run specific test file                               |
-| `npx vitest -t "Tokenizer"`                 | Run tests matching a name pattern                    |
-
-See [Testing](./docs/testing.md) for detailed information on running tests, writing test cases, and the testing philosophy.
-
----
-
-## Current Constraints
-
-Udodi intentionally prioritizes runtime simplicity and predictable behavior.
-
-Current constraints include:
-
-- Templates must render a single root element
-- Reactivity is shallow
-- Directive expressions are not arbitrary JavaScript
-- `@for` bindings require stable keys for optimal reuse
-- Nested mutations do not trigger updates automatically
-
-These constraints are deliberate architectural decisions, not missing features.
-
----
 
 ## Roadmap
 
-Curious about what's coming next? Check out our **[Roadmap](./ROADMAP.md)** to see the planned features and long-term vision for Udodi.js.
+Current development focuses on improving runtime performance, query processing, scalability, and documentation.
 
-Key upcoming improvements include:
-
-- Compiler-based directive pipeline (Lexer → Compiler → VM)
-- Directive pipelines (`@text="value | filter | transform"`)
-- Native scoped component styles using CSS `@scope`
-- Multi-threaded Query Pool for heavy computations
-- Significant runtime performance optimizations
-
-We're committed to keeping Udodi.js **lightweight**, **fast**, and **simple**.
-
----
+See the [Roadmap](./ROADMAP.md) for details.
 
 ## Contributing
 
-Contributions, discussions, and experimentation are welcome.
-
-Please read:
-
-- [CONTRIBUTING.md](./CONTRIBUTING.md)
-
-before submitting pull requests.
+Contributions, core reviews, and optimization feedback are highly welcome. Please ensure you read the full [Contribution Guidelines](./CONTRIBUTING.md) before pushing a pull request tracking branch.
 
 ## License
 
-**MIT License** — feel free to use, modify, and distribute.
+Udodi is open-source software licensed under the terms of the [MIT License](./LICENSE).
 
----
-
-**Made with ❤️ in Nigeria.**
+<p align="center">
+  Made with ❤️ in Nigeria.
+</p>
