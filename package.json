@@ -19,7 +19,6 @@
         "dev": "tsup --watch",
         "build": "tsup",
         "clean": "rm -rf dist",
-        "prepublishOnly": "echo 'Use git tag release flow only' && exit 1",
         "test": "vitest run",
         "test:watch": "vitest",
         "test:ui": "vitest --ui"
@@ -34,7 +33,7 @@
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/cocest/udodi.git"
+        "url": "https://github.com/udodi-js/udodi.git"
     },
     "devDependencies": {
         "@vitest/ui": "^4.1.8",
