@@ -4,7 +4,6 @@ import {
 	createNamespace,
 	defineStore,
 	destroyStore,
-	registerStore,
 	store,
 } from "udodi";
 
@@ -256,7 +255,7 @@ describe("store registry", () => {
 	it("tracks dynamic state keys through the module proxy", async () => {
 		store.clear();
 		let keys = [];
-		const counter = registerStore("dynamicCounter", {
+		const counter = defineStore("dynamicCounter", {
 			state: { count: 0 },
 			actions: {
 				addLabel({ state }, label) {
@@ -276,7 +275,7 @@ describe("store registry", () => {
 	it("runs definition cleanup when a module is destroyed", () => {
 		store.clear();
 		let cleaned = false;
-		registerStore("cleanupStore", {
+		defineStore("cleanupStore", {
 			state: { value: 1 },
 			cleanup() {
 				cleaned = true;
