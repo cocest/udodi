@@ -435,9 +435,7 @@ export const store = {
 	 * @param {string} key
 	 */
 	delete(key) {
-		const hadKey =
-			state.has(key) ||
-			pendingValues.has(key);
+		const hadKey = state.has(key) || pendingValues.has(key);
 
 		if (!hadKey) {
 			return;
@@ -584,14 +582,11 @@ export function createNamespace(ns) {
 			return controller;
 		},
 
-		delete: (key) =>
-			store.delete(k(key)),
+		delete: (key) => store.delete(k(key)),
 
-		has: (key) =>
-			store.has(k(key)),
+		has: (key) => store.has(k(key)),
 
-		hasAction: (action) =>
-			store.hasAction(`${ns}:${action}`),
+		hasAction: (action) => store.hasAction(`${ns}:${action}`),
 	};
 
 	return api;

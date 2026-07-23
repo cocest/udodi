@@ -32,7 +32,19 @@ const dbCache = new Map();
  */
 function normalizeKeys(keys) {
 	if (Array.isArray(keys)) {
-		return [...new Set(keys)];
+		const unique = [];
+		const seen = new Set();
+
+		for (let i = 0, length = keys.length; i < length; i++) {
+			const key = keys[i];
+
+			if (!seen.has(key)) {
+				seen.add(key);
+				unique.push(key);
+			}
+		}
+
+		return unique;
 	}
 
 	return [keys];
@@ -56,19 +68,6 @@ function hasIndexedDB() {
  */
 function toStorageKey(key, prefix) {
 	return prefix ? `${prefix}:${key}` : key;
-}
-
-/**
- * Convert an IndexedDB request into a Promise.
- *
- * @param {IDBRequest} request
- * @returns {Promise<any>}
- */
-function requestToPromise(request) {
-	return new Promise((resolve, reject) => {
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error);
-	});
 }
 
 /**
@@ -112,52 +111,51 @@ function openDatabase(dbName, storeName) {
 }
 
 /**
- * Read a persisted value.
+ * Hydrate persisted values into the store.
+ *
+ * Reads all configured keys using a single readonly transaction.
  *
  * @param {IDBDatabase} db
  * @param {string} storeName
- * @param {string} key
- * @returns {Promise<any>}
+ * @param {string[]} keys
+ * @param {string|undefined} prefix
+ * @param {{set: Function}} api
+ * @returns {Promise<void>}
  */
-function readValue(db, storeName, key) {
-	const tx = db.transaction(storeName, "readonly");
+function hydrateState(db, storeName, keys, prefix, api) {
+	return new Promise((resolve, reject) => {
+		const tx = db.transaction(storeName, "readonly");
 
-	return requestToPromise(
-		tx.objectStore(storeName).get(key),
-	);
-}
+		const objectStore = tx.objectStore(storeName);
 
-/**
- * Write a persisted value.
- *
- * @param {IDBDatabase} db
- * @param {string} storeName
- * @param {string} key
- * @param {any} value
- * @returns {Promise<any>}
- */
-function writeValue(db, storeName, key, value) {
-	const tx = db.transaction(storeName, "readwrite");
+		tx.oncomplete = () => {
+			resolve();
+		};
 
-	return requestToPromise(
-		tx.objectStore(storeName).put(value, key),
-	);
-}
+		tx.onerror = () => {
+			reject(tx.error || new Error("IndexedDB hydration transaction failed."));
+		};
 
-/**
- * Remove a persisted value.
- *
- * @param {IDBDatabase} db
- * @param {string} storeName
- * @param {string} key
- * @returns {Promise<any>}
- */
-function removeValue(db, storeName, key) {
-	const tx = db.transaction(storeName, "readwrite");
+		tx.onabort = () => {
+			reject(tx.error || new Error("IndexedDB hydration transaction aborted."));
+		};
 
-	return requestToPromise(
-		tx.objectStore(storeName).delete(key),
-	);
+		for (let i = 0, length = keys.length; i < length; i++) {
+			const key = keys[i];
+
+			const request = objectStore.get(
+				toStorageKey(key, prefix),
+			);
+
+			request.onsuccess = () => {
+				const value = request.result;
+
+				if (value !== undefined) {
+					api.set(key, value);
+				}
+			};
+		}
+	});
 }
 
 /**
@@ -176,16 +174,19 @@ function toPersistable(value, seen = new WeakMap()) {
 		return new Date(value.getTime());
 	}
 
-	if (seen.has(value)) {
-		return seen.get(value);
+	const cached = seen.get(value);
+
+	if (cached !== undefined) {
+		return cached;
 	}
 
 	if (Array.isArray(value)) {
-		const clone = [];
+		const length = value.length;
+		const clone = new Array(length);
 
 		seen.set(value, clone);
 
-		for (let i = 0; i < value.length; i++) {
+		for (let i = 0; i < length; i++) {
 			clone[i] = toPersistable(value[i], seen);
 		}
 
@@ -197,7 +198,7 @@ function toPersistable(value, seen = new WeakMap()) {
 
 		seen.set(value, clone);
 
-		for (const [key, entryValue] of value.entries()) {
+		for (const [key, entryValue] of value) {
 			clone.set(
 				toPersistable(key, seen),
 				toPersistable(entryValue, seen),
@@ -212,7 +213,7 @@ function toPersistable(value, seen = new WeakMap()) {
 
 		seen.set(value, clone);
 
-		for (const entryValue of value.values()) {
+		for (const entryValue of value) {
 			clone.add(toPersistable(entryValue, seen));
 		}
 
@@ -223,7 +224,10 @@ function toPersistable(value, seen = new WeakMap()) {
 
 	seen.set(value, clone);
 
-	for (const key of Object.keys(value)) {
+	const keys = Object.keys(value);
+
+	for (let i = 0, length = keys.length; i < length; i++) {
+		const key = keys[i];
 		clone[key] = toPersistable(value[key], seen);
 	}
 
@@ -280,9 +284,7 @@ export function persistStore(api, keys, options = {}) {
 	}
 
 	if (!hasIndexedDB()) {
-		globalThis.console?.warn?.(
-			"[store.persist] IndexedDB is not available.",
-		);
+		globalThis.console?.warn?.("[store.persist] IndexedDB is not available.");
 
 		return inactiveController(localKeys);
 	}
@@ -303,10 +305,7 @@ export function persistStore(api, keys, options = {}) {
 			return;
 		}
 
-		globalThis.console?.warn?.(
-			"[store.persist] IndexedDB error:",
-			error,
-		);
+		globalThis.console?.warn?.("[store.persist] IndexedDB error:", error);
 	};
 
 	/**
@@ -326,49 +325,80 @@ export function persistStore(api, keys, options = {}) {
 	 * @returns {Promise<boolean>}
 	 */
 	const writePending = async () => {
-		if (!db || pending.size === 0) {
+		if (db === null || pending.size === 0) {
 			return true;
 		}
 
+		/**
+		 * Snapshot pending values before clearing the queue.
+		 *
+		 * A new value for the same key may be queued while this
+		 * transaction is running. That newer value must not be
+		 * overwritten when an older transaction fails.
+		 */
 		const entries = Array.from(pending.entries());
 
 		pending.clear();
 
 		try {
-			for (const [key, value] of entries) {
+			/**
+			 * Use one transaction for the entire batch.
+			 *
+			 * This is substantially cheaper than creating one
+			 * readwrite transaction per key.
+			 */
+			const tx = db.transaction(storeName, "readwrite");
+
+			const objectStore = tx.objectStore(storeName);
+
+			const txPromise = new Promise((resolve, reject) => {
+				tx.oncomplete = () => {
+					resolve(true);
+				};
+
+				tx.onerror = () => {
+					reject(tx.error || new Error("IndexedDB transaction failed."));
+				};
+
+				tx.onabort = () => {
+					reject(tx.error || new Error("IndexedDB transaction aborted."));
+				};
+			});
+
+			for (let i = 0, length = entries.length; i < length; i++) {
+				const key = entries[i][0];
+				const value = entries[i][1];
+
 				const storageKey = toStorageKey(key, _prefix);
 
-				if (
-					removeOnUndefined &&
-					value === undefined
-				) {
-					await removeValue(
-						db,
-						storeName,
-						storageKey,
-					);
+				if (removeOnUndefined && value === undefined) {
+					objectStore.delete(storageKey);
 				} else {
-					await writeValue(
-						db,
-						storeName,
-						storageKey,
-						toPersistable(value),
-					);
+					objectStore.put(toPersistable(value), storageKey);
 				}
 			}
 
+			await txPromise;
 			return true;
-			
+
 		} catch (error) {
 			/**
-			 * Re-queue failed values so a later flush can retry them.
+			 * Re-queue failed values only when the key has not
+			 * received a newer pending value.
+			 *
+			 * This prevents an older failed write from replacing
+			 * a newer value queued while the transaction was running.
 			 */
-			for (const [key, value] of entries) {
-				pending.set(key, value);
+			for (let i = 0, length = entries.length; i < length; i++) {
+				const key = entries[i][0];
+				const value = entries[i][1];
+
+				if (!pending.has(key)) {
+					pending.set(key, value);
+				}
 			}
 
 			reportError(error);
-
 			return false;
 		}
 	};
@@ -418,29 +448,22 @@ export function persistStore(api, keys, options = {}) {
 			db = opened;
 
 			if (hydrate) {
-				for (const key of localKeys) {
-					const storageKey = toStorageKey(
-						key,
-						_prefix,
-					);
-
-					const value = await readValue(
-						db,
-						storeName,
-						storageKey,
-					);
-
-					if (value !== undefined) {
-						api.set(key, value);
-					}
-				}
+				await hydrateState(
+					db,
+					storeName,
+					localKeys,
+					_prefix,
+					api,
+				);
 			}
 
 			if (stopped) {
 				return false;
 			}
 
-			for (const key of localKeys) {
+			for (let i = 0, length = localKeys.length; i < length; i++) {
+				const key = localKeys[i];
+
 				const cleanup = api.subscribe(
 					key,
 					(value) => {
@@ -454,8 +477,8 @@ export function persistStore(api, keys, options = {}) {
 			}
 
 			return true;
-		})
-		.catch((error) => {
+
+		}).catch((error) => {
 			reportError(error);
 			return false;
 		});
@@ -473,7 +496,6 @@ export function persistStore(api, keys, options = {}) {
 		async flush() {
 			return ready.then(() => {
 				cancelScheduledWrite();
-
 				return writePending();
 			});
 		},
@@ -487,7 +509,7 @@ export function persistStore(api, keys, options = {}) {
 		 */
 		async clear() {
 			return ready.then(async () => {
-				if (!db) {
+				if (db === null) {
 					return false;
 				}
 
@@ -495,19 +517,51 @@ export function persistStore(api, keys, options = {}) {
 				pending.clear();
 
 				try {
-					for (const key of localKeys) {
-						await removeValue(
-							db,
-							storeName,
-							toStorageKey(key, _prefix),
+					/**
+					 * Use one transaction for all delete operations.
+					 *
+					 * This avoids creating one IndexedDB transaction
+					 * for every persisted key.
+					 */
+					const tx = db.transaction(
+						storeName,
+						"readwrite",
+					);
+
+					const objectStore = tx.objectStore(
+						storeName,
+					);
+
+					const txPromise = new Promise(
+						(resolve, reject) => {
+							tx.oncomplete = () => {
+								resolve(true);
+							};
+
+							tx.onerror = () => {
+								reject(tx.error || new Error("IndexedDB transaction failed."));
+							};
+
+							tx.onabort = () => {
+								reject(tx.error || new Error("IndexedDB transaction aborted."));
+							};
+						},
+					);
+
+					for (let i = 0, length = localKeys.length; i < length; i++) {
+						objectStore.delete(
+							toStorageKey(
+								localKeys[i],
+								_prefix,
+							),
 						);
 					}
 
+					await txPromise;
 					return true;
-					
+
 				} catch (error) {
 					reportError(error);
-
 					return false;
 				}
 			});
@@ -533,9 +587,9 @@ export function persistStore(api, keys, options = {}) {
 			 */
 			pending.clear();
 
-			for (const cleanup of cleanups) {
+			for (let i = 0, length = cleanups.length; i < length; i++) {
 				try {
-					cleanup();
+					cleanups[i]();
 				} catch {}
 			}
 
